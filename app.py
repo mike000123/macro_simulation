@@ -96,15 +96,18 @@ with st.sidebar:
     preset = st.selectbox("Preset", list(PRESETS.keys()), index=0)
     p = PRESETS[preset].copy()
 
-    p["fedRate"] = st.slider("Fed Funds Rate (%)", 0.0, 12.0, p["fedRate"], 0.25)
-    p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -2.0, 20.0, p["moneySupplyGrowth"], 0.5)
-    p["govSpending"] = st.slider("Gov Spending ($T)", 4.0, 12.0, p["govSpending"], 0.1)
-    p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, p["taxRate"], 0.5)
-    p["debtToGDP"] = st.slider("Debt/GDP (%)", 60.0, 200.0, p["debtToGDP"], 1.0)
-    p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, p["tariffRate"], 0.5)
-    p["oilPrice"] = st.slider("Oil Price ($/bbl)", 30.0, 180.0, p["oilPrice"], 1.0)
-    p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, p["productivityGrowth"], 0.1)
-    p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, p["laborForceGrowth"], 0.1)
+    def f(value):
+        return float(value)
+
+    p["fedRate"] = st.slider("Fed Funds Rate (%)", 0.0, 12.0, f(p["fedRate"]), 0.25)
+    p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -2.0, 20.0, f(p["moneySupplyGrowth"]), 0.5)
+    p["govSpending"] = st.slider("Gov Spending ($T)", 4.0, 12.0, f(p["govSpending"]), 0.1)
+    p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, f(p["taxRate"]), 0.5)
+    p["debtToGDP"] = st.slider("Debt/GDP (%)", 60.0, 200.0, f(p["debtToGDP"]), 1.0)
+    p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, f(p["tariffRate"]), 0.5)
+    p["oilPrice"] = st.slider("Oil Price ($/bbl)", 30.0, 180.0, f(p["oilPrice"]), 1.0)
+    p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, f(p["productivityGrowth"]), 0.1)
+    p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, f(p["laborForceGrowth"]), 0.1)
 
 # Run simulation
 results = simulate(p)
