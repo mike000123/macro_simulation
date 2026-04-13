@@ -27,6 +27,17 @@ WHATIF_PRESETS = {
 CL = {"cy": "#00e5ff", "gn": "#00e676", "rd": "#ff5252", "am": "#ffab00",
       "bl": "#448aff", "pu": "#b388ff", "pk": "#ff80ab", "or": "#ff9100"}
 
+def f(x):
+    return float(x)
+
+def hex_to_rgba(color: str, alpha: float = 0.12) -> str:
+    color = color.strip()
+    if not color.startswith("#") or len(color) != 7:
+        return color
+    r = int(color[1:3], 16)
+    g = int(color[3:5], 16)
+    b = int(color[5:7], 16)
+    return f"rgba({r}, {g}, {b}, {alpha})"
 
 def results_to_df(results):
     return pd.DataFrame([r.__dict__ for r in results])
@@ -43,7 +54,7 @@ def plot_lines(df, cols, names, colors, title, height=350):
 def plot_area(df, col, name, color, title, height=280):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["label"], y=df[col], fill="tozeroy", name=name,
-                             line=dict(color=color, width=2), fillcolor=color + "20"))
+                             line=dict(color=color, width=2), fillcolor=hex_to_rgba(color, 0.12)))
     fig.update_layout(template="plotly_dark", height=height, title=title,
                       margin=dict(l=40, r=20, t=40, b=30),
                       paper_bgcolor="#0f1520", plot_bgcolor="#080c14")
@@ -109,14 +120,14 @@ with st.sidebar:
         st.divider()
         st.markdown("##### Adjust Policy")
         p = cur_inp.copy()
-        p["fedRate"] = st.slider("Fed Rate (%)", 0.0, 12.0, p["fedRate"], 0.25)
-        p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, p["tariffRate"], 0.5)
-        p["oilPrice"] = st.slider("Oil ($/bbl)", 30.0, 180.0, p["oilPrice"], 1.0)
-        p["govSpending"] = st.slider("Gov Spend ($T)", 4.0, 12.0, p["govSpending"], 0.1)
-        p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -5.0, 25.0, p["moneySupplyGrowth"], 0.5)
-        p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, p["taxRate"], 0.5)
-        p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, p["productivityGrowth"], 0.1)
-        p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, p["laborForceGrowth"], 0.1)
+        p["fedRate"] = st.slider("Fed Rate (%)", 0.0, 12.0, f(p["fedRate"]), 0.25)
+        p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, f(p["tariffRate"]), 0.5)
+        p["oilPrice"] = st.slider("Oil ($/bbl)", 30.0, 180.0, f(p["oilPrice"]), 1.0)
+        p["govSpending"] = st.slider("Gov Spend ($T)", 4.0, 12.0, f(p["govSpending"]), 0.1)
+        p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -5.0, 25.0, f(p["moneySupplyGrowth"]), 0.5)
+        p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, f(p["taxRate"]), 0.5)
+        p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, f(p["productivityGrowth"]), 0.1)
+        p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, f(p["laborForceGrowth"]), 0.1)
 
         ic = {"g": cur_act["gdpGrowth"], "i": cur_act["inflation"], "u": cur_act["unemployment"],
               "fx": cur_act["currencyIndex"], "sp": cur_act["sp500Index"], "by": cur_act["bondYield10Y"],
@@ -131,15 +142,15 @@ with st.sidebar:
         preset = st.selectbox("Preset", list(WHATIF_PRESETS.keys()))
         p = WHATIF_PRESETS[preset].copy()
         st.divider()
-        p["fedRate"] = st.slider("Fed Rate (%)", 0.0, 12.0, p["fedRate"], 0.25)
-        p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -2.0, 20.0, p["moneySupplyGrowth"], 0.5)
-        p["govSpending"] = st.slider("Gov Spend ($T)", 4.0, 12.0, p["govSpending"], 0.1)
-        p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, p["taxRate"], 0.5)
+        p["fedRate"] = st.slider("Fed Rate (%)", 0.0, 12.0, f(p["fedRate"]), 0.25)
+        p["moneySupplyGrowth"] = st.slider("M2 Growth (%)", -2.0, 20.0, f(p["moneySupplyGrowth"]), 0.5)
+        p["govSpending"] = st.slider("Gov Spend ($T)", 4.0, 12.0, f(p["govSpending"]), 0.1)
+        p["taxRate"] = st.slider("Tax Rate (%)", 10.0, 40.0, f(p["taxRate"]), 0.5)
         p["debtToGDP"] = st.slider("Debt/GDP (%)", 60.0, 200.0, p["debtToGDP"], 1.0)
-        p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, p["tariffRate"], 0.5)
-        p["oilPrice"] = st.slider("Oil ($/bbl)", 30.0, 180.0, p["oilPrice"], 1.0)
-        p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, p["productivityGrowth"], 0.1)
-        p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, p["laborForceGrowth"], 0.1)
+        p["tariffRate"] = st.slider("Tariff Rate (%)", 0.0, 40.0, f(p["tariffRate"]), 0.5)
+        p["oilPrice"] = st.slider("Oil ($/bbl)", 30.0, 180.0, f(p["oilPrice"]), 1.0)
+        p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, f(p["productivityGrowth"]), 0.1)
+        p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, f(p["laborForceGrowth"]), 0.1)
         results = simulate(p)
         df = results_to_df(results)
         L = results[-1]
