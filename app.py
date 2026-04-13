@@ -44,10 +44,26 @@ def plot_lines(df, cols, names, colors, title, height=350):
     return fig
 
 
+def hex_to_rgba(hex_color, alpha=0.12):
+    hex_color = str(hex_color).strip().lstrip("#")
+    if len(hex_color) != 6:
+        return f"rgba(255,255,255,{alpha})"
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def plot_area(df, col, name, color, title, height=280):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["label"], y=df[col], fill="tozeroy", name=name,
-                             line=dict(color=color, width=2), fillcolor=color + "20"))
+    fig.add_trace(go.Scatter(
+        x=df["label"],
+        y=df[col],
+        fill="tozeroy",
+        name=name,
+        line=dict(color=color, width=2),
+        fillcolor=hex_to_rgba(color, 0.12),
+    ))
     fig.update_layout(template="plotly_dark", height=height, title=title,
                       margin=dict(l=40, r=20, t=40, b=30),
                       paper_bgcolor="#0f1520", plot_bgcolor="#080c14")
