@@ -1,4 +1,4 @@
-# MacroScope V6 — Python Edition
+# MacroScope V6 — Macroeconomic Policy Simulator
 
 ## Quick Start
 
@@ -9,36 +9,43 @@ streamlit run app.py
 
 Opens at http://localhost:8501
 
+## Three Modes
+
+### 🔮 Forecast from Now (default)
+Loads current US macro conditions (Q1 2025 defaults or live FRED data) and projects
+24 quarters forward. Adjust sidebar sliders to test policy changes from reality.
+
+### 🎛️ What-If Scenarios
+Hypothetical mode with presets (Hawkish, Stimulus, Trade War, Stagflation, Tech Boom).
+Full control over all 9 policy inputs. Starts from neutral baseline.
+
+### 🔬 Historical Backtest
+Validates against 5 crisis periods (Volcker 1979, Gulf War 1989, Dot-Com 2000, GFC 2007, Modern 2015).
+Era-adaptive scoring. 55-65 = institutional-grade.
+
+## Live FRED Data (optional)
+
+```bash
+pip install fredapi
+export FRED_API_KEY=your_key_here  # free from https://fred.stlouisfed.org/docs/api/api_key.html
+streamlit run app.py
+```
+
+Auto-fetches: Fed Funds, CPI, Unemployment, 10Y Yield, M2, Debt/GDP.
+Falls back to built-in Q1 2025 defaults if FRED unavailable.
+
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `app.py` | Streamlit UI — interactive dashboard, backtests, help |
-| `engine.py` | Simulation engine (21 channels, 90 coefficients) + coefficient dict |
-| `scoring.py` | Backtest scoring with era-adaptive scales |
-| `data.py` | Historical data for 5 crisis periods (112 quarters) |
-| `requirements.txt` | Python dependencies |
+| File | Lines | Purpose |
+|------|-------|---------|
+| `app.py` | ~260 | Streamlit UI — 3 modes, 5 tabs, Plotly charts |
+| `engine.py` | ~370 | 21-channel simulation engine + 90 coefficients |
+| `scoring.py` | ~120 | Era-adaptive backtest scoring |
+| `data.py` | ~200 | 5 crisis datasets (112 quarters, 1979-2024) |
+| `current_state.py` | ~100 | Current macro state (offline + FRED auto-fetch) |
+| `requirements.txt` | 5 | Python dependencies |
 
-## Usage
+## Updating Current State
 
-### Forward Simulation
-Adjust policy sliders in the sidebar. Charts update instantly across 4 tabs (Dashboard, Growth, Prices, Markets).
-
-### Backtest
-Select a crisis period in the 🔬 Backtest tab. The model receives actual historical policy inputs and is scored against what really happened.
-
-### Extending
-- Add new crisis periods: add entries to `DATASETS` dict in `data.py`
-- Tune coefficients: edit `K` dict in `engine.py`
-- Add variables to scoring: append to `SCORE_VARS` in `scoring.py`
-- Connect to FRED API: replace static data with `fredapi` live pulls
-
-## Engine Architecture
-21 transmission channels, era-adaptive (no hardcoded dates):
-- Monetary (ZLB, regime-dependent), Fiscal (logistic saturation), Phillips Curve (non-linear)
-- Debt dynamics (Domar with tipping points), Inflation expectations (adaptive + de-anchoring)
-- Financial conditions (endogenous FCI, yield curve, equity crash detection)
-- Trade (J-curve, retaliation), Unemployment (hysteresis, crisis-amplified Okun's)
-
-V6 crisis fixes: sqrt bond passthrough, FCI crisis amplifier, high-rate GDP sensitivity,
-adaptive Okun's, labor collapse → unemployment channel, symmetric deflation, anchor cap 8%.
+Edit `OFFLINE_INPUTS` and `OFFLINE_ACTUALS` in `current_state.py` with latest
+FRED/BEA/BLS data. Or install `fredapi` for automatic updates.
