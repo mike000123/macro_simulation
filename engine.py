@@ -301,13 +301,17 @@ def simulate(params: dict,
         ppS = pS
         pS = sp
         spT = HSP[q] if bt and HSP and q < len(HSP) else sp
+        # Earnings-driven trend: GDP growth drives long-run equity appreciation
+        # ~2% quarterly earnings growth at trend GDP (≈8% annualized nominal return)
+        eq_trend = sp * (max(0, g + inf) / 100) * 0.25 if not bt else 0  # quarterly nominal return
         spC = ((g * K["eq_e"] + dP * K["eq_p"] * lS - K["eq_r"] * dR * lM
                 + K["eq_m"] * dM * lM - K["eq_f"] * fci
                 - (K["eq_pm"] * abs(g - K["eq_pg"]) * fci
                    if g < K["eq_pg"] and fci > K["eq_pf"] else 0))
                * lF / N
                + K["eq_mo"] * (sp - pS) * 0.3
-               + K["eq_mr"] * (spT - sp))
+               + K["eq_mr"] * (spT - sp)
+               + eq_trend)
         sp = clamp(sp + spC + n * 30, 50, 14000)
 
         # ── Bonds (sqrt scaling) ──

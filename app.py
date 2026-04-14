@@ -251,8 +251,8 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.plotly_chart(plot_market(df, "sp500Index", "S&P 500", CL["gn"], "S&P 500"), use_container_width=True)
         # DXY: level variable (~80-120). MUST NOT fill to zero.
         st.plotly_chart(plot_market(df, "currencyIndex", "DXY", CL["cy"], "USD Index (DXY)"), use_container_width=True)
-        # Trade Balance: negative values, fill-to-zero actually works here
-        st.plotly_chart(plot_pct(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
+        # Trade Balance: also a level variable (negative), use market chart
+        st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
 
     with tab_h:
         st.markdown("""## How to Use MacroScope
