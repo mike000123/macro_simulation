@@ -90,10 +90,8 @@ def plot_market(df, col, name, color, title, height=300):
         line=dict(color=color, width=2.5),
         fillcolor=hex_to_rgba(color, 0.15),
     ))
-    fig.update_layout(
-        **DARK_LAYOUT, height=height, title=title,
-        yaxis=dict(range=[baseline_y, ymax + pad], color="#A9B8D4", gridcolor="#1f2a3a"),
-    )
+    fig.update_layout(**DARK_LAYOUT, height=height, title=title)
+    fig.update_yaxes(range=[baseline_y, ymax + pad], color="#A9B8D4", gridcolor="#1f2a3a")
     return fig
 
 
