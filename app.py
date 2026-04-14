@@ -14,6 +14,7 @@ from scoring import score, SCORE_VARS
 from data import DATASETS
 from current_state import get_current_state
 from earnings import EarningsConsensus, earnings_equity_model, consensus_from_macro
+from stress import get_shock_profiles, apply_shock_to_params, SHOCK_CONFIGS
 
 st.set_page_config(page_title="MacroScope V6", layout="wide", page_icon="Σ")
 
@@ -215,6 +216,27 @@ with st.sidebar:
             for i, val in enumerate(sp_earnings):
                 results[i].sp500Earnings = val
 
+        # ── Stress Test ──
+        st.divider()
+        shock_profiles = get_shock_profiles()
+        enable_stress = st.checkbox("🔥 Enable Stress Test", value=False,
+                                     help="Inject a historical crisis shock into the forward projection")
+        stress_results = None
+        stress_df = None
+        if enable_stress and shock_profiles:
+            shock_id = st.selectbox("Crisis Type",
+                list(shock_profiles.keys()),
+                format_func=lambda k: shock_profiles[k].name)
+            shock = shock_profiles[shock_id]
+            st.caption(shock.description)
+            onset_q = st.slider("Shock Onset (quarter)", 1, 18, 4,
+                                help="Which quarter the crisis begins")
+            severity = st.slider("Severity", 0.25, 2.0, 1.0, 0.25,
+                                 help="1.0 = historical magnitude. 2.0 = twice as severe.")
+            shocked_series = apply_shock_to_params(p, shock, onset_q - 1, severity, 24)
+            stress_results = simulate(shocked_series[0], shocked_series, ic)
+            stress_df = results_to_df(stress_results)
+
         df = results_to_df(results)
         L = results[-1]
         ref = {"gdp": cur_act["gdpGrowth"], "inf": cur_act["inflation"], "u": cur_act["unemployment"],
@@ -265,16 +287,27 @@ with st.sidebar:
         initial_state = {"gdpGrowth": 2.5, "inflation": 3.2, "unemployment": 4.0,
                          "currencyIndex": 100, "sp500Index": 5200, "goldPrice": 2900,
                          "bondYield10Y": 4.3, "tradeBalance": -780, "consumerConfidence": 98}
+        stress_df = None
+        stress_results = None
     else:
         results = df = L = ref = None
+        stress_df = None
+        stress_results = None
 
 
 # ═══════════════════════════════════════════════════════════════
 # FORECAST / WHAT-IF CONTENT
 # ═══════════════════════════════════════════════════════════════
 if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
-    tab_d, tab_g, tab_p, tab_m, tab_data, tab_h = st.tabs(
-        ["◉ Dashboard", "📈 Growth", "🔥 Prices", "💹 Markets", "📋 Data", "❓ Help"])
+    tab_list = ["◉ Dashboard", "📈 Growth", "🔥 Prices", "💹 Markets", "📋 Data", "❓ Help"]
+    if stress_df is not None:
+        tab_list.insert(4, "🔥 Stress Test")
+    tabs = st.tabs(tab_list)
+    if stress_df is not None:
+        tab_d, tab_g, tab_p, tab_m, tab_stress, tab_data, tab_h = tabs
+    else:
+        tab_d, tab_g, tab_p, tab_m, tab_data, tab_h = tabs
+        tab_stress = None
 
     with tab_d:
         if "Forecast" in mode:
@@ -339,6 +372,73 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.plotly_chart(plot_market(df, "goldPrice", "Gold", CL["am"], "Gold ($/oz)"), use_container_width=True)
         # Trade Balance
         st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
+
+    # ── STRESS TEST TAB ──
+    if tab_stress is not None and stress_df is not None:
+        with tab_stress:
+            st.markdown(f"### 🔥 Stress Test: {shock_profiles[shock_id].name}")
+            st.caption(f"Shock onset: Q{onset_q} | Severity: {severity}x | Duration: {shock.n_quarters} quarters + recovery")
+
+            # Comparison charts: baseline vs stressed
+            for var_key, var_label, color_base, color_stress in [
+                ("gdpGrowth", "GDP Growth (%)", CL["cy"], CL["rd"]),
+                ("unemployment", "Unemployment (%)", CL["am"], CL["rd"]),
+                ("inflation", "Inflation (%)", CL["pk"], CL["rd"]),
+                ("sp500Index", "S&P 500", CL["gn"], CL["rd"]),
+                ("goldPrice", "Gold ($/oz)", CL["am"], CL["rd"]),
+                ("bondYield10Y", "10Y Yield (%)", CL["bl"], CL["rd"]),
+                ("currencyIndex", "DXY", CL["cy"], CL["rd"]),
+            ]:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=df["label"], y=df[var_key], mode="lines",
+                    name="Baseline", line=dict(color=color_base, width=2)))
+                fig.add_trace(go.Scatter(x=stress_df["label"], y=stress_df[var_key], mode="lines",
+                    name="Stressed", line=dict(color=color_stress, width=2.5, dash="dot")))
+                # Shade the shock period
+                fig.add_vrect(x0=f"Q{onset_q}", x1=f"Q{min(onset_q + shock.n_quarters, 24)}",
+                              fillcolor="rgba(255,82,82,0.08)", line_width=0)
+                fig.update_layout(**DARK_LAYOUT, height=280, title=var_label)
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Impact summary
+            st.markdown("##### Impact Summary (stressed vs baseline at trough)")
+            # Find worst quarter for GDP in stress
+            stress_gdp = [r.gdpGrowth for r in stress_results]
+            base_gdp = [r.gdpGrowth for r in results]
+            worst_q = int(np.argmin(stress_gdp))
+
+            impact_data = {
+                "Variable": ["GDP Growth", "Unemployment", "Inflation", "S&P 500", "Gold", "10Y Yield", "DXY"],
+                "Baseline": [
+                    f"{results[worst_q].gdpGrowth:.1f}%",
+                    f"{results[worst_q].unemployment:.1f}%",
+                    f"{results[worst_q].inflation:.1f}%",
+                    f"{results[worst_q].sp500Index:,.0f}",
+                    f"{results[worst_q].goldPrice:,.0f}",
+                    f"{results[worst_q].bondYield10Y:.2f}%",
+                    f"{results[worst_q].currencyIndex:.1f}",
+                ],
+                "Stressed": [
+                    f"{stress_results[worst_q].gdpGrowth:.1f}%",
+                    f"{stress_results[worst_q].unemployment:.1f}%",
+                    f"{stress_results[worst_q].inflation:.1f}%",
+                    f"{stress_results[worst_q].sp500Index:,.0f}",
+                    f"{stress_results[worst_q].goldPrice:,.0f}",
+                    f"{stress_results[worst_q].bondYield10Y:.2f}%",
+                    f"{stress_results[worst_q].currencyIndex:.1f}",
+                ],
+                "Impact": [
+                    f"{stress_results[worst_q].gdpGrowth - results[worst_q].gdpGrowth:+.1f}pp",
+                    f"{stress_results[worst_q].unemployment - results[worst_q].unemployment:+.1f}pp",
+                    f"{stress_results[worst_q].inflation - results[worst_q].inflation:+.1f}pp",
+                    f"{stress_results[worst_q].sp500Index - results[worst_q].sp500Index:+,.0f}",
+                    f"{stress_results[worst_q].goldPrice - results[worst_q].goldPrice:+,.0f}",
+                    f"{stress_results[worst_q].bondYield10Y - results[worst_q].bondYield10Y:+.2f}pp",
+                    f"{stress_results[worst_q].currencyIndex - results[worst_q].currencyIndex:+.1f}",
+                ],
+            }
+            st.dataframe(pd.DataFrame(impact_data), use_container_width=True, hide_index=True)
+            st.caption(f"Trough quarter: Q{worst_q + 1} | Regime: {stress_results[worst_q].regime} | FCI: {stress_results[worst_q].fci:.2f}")
 
     with tab_data:
         st.markdown("### 📋 Input Data Used for This Forecast")
