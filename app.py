@@ -14,7 +14,7 @@ from scoring import score, SCORE_VARS
 from data import DATASETS
 from current_state import get_current_state
 from earnings import EarningsConsensus, earnings_equity_model, consensus_from_macro
-from stress import get_shock_profiles, apply_shock_to_params, SHOCK_CONFIGS
+from stress import get_shock_profiles, apply_shock_to_params, monte_carlo_simulate, compute_percentiles
 
 st.set_page_config(page_title="MacroScope V6", layout="wide", page_icon="Σ")
 
@@ -54,6 +54,32 @@ def hex_to_rgba(color, alpha=0.15):
 
 def results_to_df(results):
     return pd.DataFrame([r.__dict__ for r in results])
+
+
+def plot_cone(df, col, title, color, mc_pctiles, height=300):
+    """Chart with Monte Carlo 10/50/90 percentile cone."""
+    labels = df["label"].tolist()
+    p10 = mc_pctiles[col][10]
+    p50 = mc_pctiles[col][50]
+    p90 = mc_pctiles[col][90]
+
+    fig = go.Figure()
+    # 10-90 band
+    fig.add_trace(go.Scatter(
+        x=labels + labels[::-1],
+        y=list(p90) + list(p10[::-1]),
+        fill="toself", fillcolor=hex_to_rgba(color, 0.12),
+        line=dict(width=0), showlegend=True, name="10–90%",
+        hoverinfo="skip",
+    ))
+    # 50th percentile (median)
+    fig.add_trace(go.Scatter(x=labels, y=p50, mode="lines",
+        name="Median (50%)", line=dict(color=color, width=2, dash="dash")))
+    # Baseline (deterministic)
+    fig.add_trace(go.Scatter(x=labels, y=df[col], mode="lines",
+        name="Baseline", line=dict(color="#dfe8f5", width=2)))
+    fig.update_layout(**DARK_LAYOUT, height=height, title=f"{title} — Probability Cone")
+    return fig
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -233,9 +259,20 @@ with st.sidebar:
                                 help="Which quarter the crisis begins")
             severity = st.slider("Severity", 0.25, 2.0, 1.0, 0.25,
                                  help="1.0 = historical magnitude. 2.0 = twice as severe.")
-            shocked_series = apply_shock_to_params(p, shock, onset_q - 1, severity, 24)
-            stress_results = simulate(shocked_series[0], shocked_series, ic)
+            stressed_series = apply_shock_to_params(p, shock, onset_q - 1, severity, 24)
+            stress_results = simulate(stressed_series[0], stressed_series, ic)
             stress_df = results_to_df(stress_results)
+
+        # ── Monte Carlo ──
+        st.divider()
+        enable_mc = st.checkbox("📊 Probability Cones (Monte Carlo)", value=False,
+                                help="Run 200 simulations with random input noise to show 10/50/90 percentile bands")
+        mc_pctiles = None
+        if enable_mc:
+            n_sims = st.select_slider("Simulations", [50, 100, 200, 500], value=200)
+            with st.spinner(f"Running {n_sims} Monte Carlo simulations..."):
+                mc_raw = monte_carlo_simulate(p, ic, n_sims=n_sims, n_quarters=24)
+                mc_pctiles = compute_percentiles(mc_raw)
 
         df = results_to_df(results)
         L = results[-1]
@@ -289,10 +326,12 @@ with st.sidebar:
                          "bondYield10Y": 4.3, "tradeBalance": -780, "consumerConfidence": 98}
         stress_df = None
         stress_results = None
+        mc_pctiles = None
     else:
         results = df = L = ref = None
         stress_df = None
         stress_results = None
+        mc_pctiles = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -313,16 +352,30 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         if "Forecast" in mode:
             st.info(f"Projecting 24 quarters from **{src}** conditions. Adjust sliders to test policy changes.", icon="🔮")
         show_kpis(df, L, ref)
+        # Monte Carlo cones on dashboard
+        if mc_pctiles is not None:
+            st.markdown("##### Probability Cones (Monte Carlo)")
+            for col, title, color in [
+                ("gdpGrowth", "GDP Growth (%)", CL["cy"]),
+                ("sp500Index", "S&P 500", CL["gn"]),
+                ("inflation", "Inflation (%)", CL["rd"]),
+                ("unemployment", "Unemployment (%)", CL["am"]),
+            ]:
+                st.plotly_chart(plot_cone(df, col, title, color, mc_pctiles), use_container_width=True)
 
     with tab_g:
-        # GDP and Unemployment: fill-to-zero is fine for percentages
-        for c, t, clr in [("gdpGrowth", "GDP Growth (%)", CL["cy"]),
-                           ("unemployment", "Unemployment (%)", CL["am"])]:
-            st.plotly_chart(plot_pct(df, c, t, clr, t), use_container_width=True)
-        # Wages: also a percentage
-        st.plotly_chart(plot_pct(df, "wageGrowth", "Wage Growth (%)", CL["pk"], "Wage Growth (%)"), use_container_width=True)
-        # Confidence: level variable (60-140 range), use market chart
-        st.plotly_chart(plot_market(df, "consumerConfidence", "Consumer Confidence", CL["gn"], "Consumer Confidence"), use_container_width=True)
+        if mc_pctiles is not None:
+            for c, t, clr in [("gdpGrowth", "GDP Growth", CL["cy"]),
+                               ("unemployment", "Unemployment", CL["am"]),
+                               ("wageGrowth", "Wage Growth", CL["pk"]),
+                               ("consumerConfidence", "Consumer Confidence", CL["gn"])]:
+                st.plotly_chart(plot_cone(df, c, t, clr, mc_pctiles), use_container_width=True)
+        else:
+            for c, t, clr in [("gdpGrowth", "GDP Growth (%)", CL["cy"]),
+                               ("unemployment", "Unemployment (%)", CL["am"])]:
+                st.plotly_chart(plot_pct(df, c, t, clr, t), use_container_width=True)
+            st.plotly_chart(plot_pct(df, "wageGrowth", "Wage Growth (%)", CL["pk"], "Wage Growth (%)"), use_container_width=True)
+            st.plotly_chart(plot_market(df, "consumerConfidence", "Consumer Confidence", CL["gn"], "Consumer Confidence"), use_container_width=True)
 
     with tab_p:
         st.plotly_chart(plot_lines(df, ["inflation", "inflExpectations", "wageGrowth"],
@@ -367,11 +420,20 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
             st.plotly_chart(plot_market(df, "sp500Index", "S&P 500", CL["gn"], "S&P 500 (Macro Model)"), use_container_width=True)
 
         # DXY
-        st.plotly_chart(plot_market(df, "currencyIndex", "DXY", CL["cy"], "USD Index (DXY)"), use_container_width=True)
+        if mc_pctiles is not None:
+            st.plotly_chart(plot_cone(df, "currencyIndex", "DXY", CL["cy"], mc_pctiles), use_container_width=True)
+        else:
+            st.plotly_chart(plot_market(df, "currencyIndex", "DXY", CL["cy"], "USD Index (DXY)"), use_container_width=True)
         # Gold
-        st.plotly_chart(plot_market(df, "goldPrice", "Gold", CL["am"], "Gold ($/oz)"), use_container_width=True)
+        if mc_pctiles is not None:
+            st.plotly_chart(plot_cone(df, "goldPrice", "Gold", CL["am"], mc_pctiles), use_container_width=True)
+        else:
+            st.plotly_chart(plot_market(df, "goldPrice", "Gold", CL["am"], "Gold ($/oz)"), use_container_width=True)
         # Trade Balance
-        st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
+        if mc_pctiles is not None:
+            st.plotly_chart(plot_cone(df, "tradeBalance", "Trade Balance", CL["pk"], mc_pctiles), use_container_width=True)
+        else:
+            st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
 
     # ── STRESS TEST TAB ──
     if tab_stress is not None and stress_df is not None:
