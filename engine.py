@@ -111,6 +111,7 @@ class SimResult:
     currencyIndex: float = 100
     sp500Index: float = 5200
     sp500Earnings: float = 0       # Earnings-model S&P (0 = not computed)
+    goldPrice: float = 2900
     bondYield10Y: float = 4.3
     tradeBalance: float = -780
     debtToGDP: float = 123
@@ -182,6 +183,9 @@ def simulate(params: dict,
     wg = clamp(sI + 1, 2, 8)
     pS = sp
     ppS = sp
+    gold = ic.get("gold", 2900.0)   # $/oz
+    prev_fx = sFX
+    prev_tb = sTB
 
     ref = input_series[0] if bt else params
 
@@ -292,11 +296,20 @@ def simulate(params: dict,
             uI += abs(dL) * 1.5
         u = clamp((sU + ns) + uI + n * 0.25, 1.5, 18)
 
-        # ── Currency ──
+        # ── Currency (with cyclical dynamics) ──
         fxRS = K["fx_rb"] + K["fx_rl"] * abs(p["fedRate"])
-        fx = clamp(sFX + fxRS * dR * lM * zlb - K["fx_f"] * fci
-                    - K["fx_m"] * dM * lM + K["fx_ca"] * (tb - sTB) * 0.01
-                    - K["fx_to"] * dO, 55, 150)
+        # Core FX: rate differential + FCI + money + trade + oil
+        fx_core = sFX + fxRS * dR * lM * zlb - K["fx_f"] * fci \
+                  - K["fx_m"] * dM * lM + K["fx_ca"] * (tb - sTB) * 0.01 \
+                  - K["fx_to"] * dO
+        # Add GDP-cycle feedback: strong growth attracts capital → stronger dollar
+        fx_gdp = 0.3 * (g - 2.0)
+        # Add gradual drift from inflation differential (PPP channel)
+        fx_ppp = -0.15 * max(0, inf - 2.5) * (q / max(N, 1))
+        # Momentum (small carry-over from previous move)
+        fx_mom = 0.2 * (fx - prev_fx)
+        prev_fx = fx
+        fx = clamp(fx_core + fx_gdp + fx_ppp + fx_mom + n * 0.5, 55, 150)
 
         # ── Equities ──
         ppS = pS
@@ -326,10 +339,20 @@ def simulate(params: dict,
         # ── Debt ──
         dtg, _ = debt_calc(dtg, by, g, dS * K["ds"] - dT * K["dtt"] + K["da"] * max(0, u - 5))
 
-        # ── Trade ──
+        # ── Trade (with cyclical dynamics) ──
         jc = -1.2 if q < K["tj"] else 0.6
-        tb = clamp(sTB - K["tf"] * (fx - sFX) + dTa * K["tt"] * jc * lF
-                    - dS * K["ts"] * lF - K["tr"] * max(0, dTa) * 10 * lF, -1800, 300)
+        tb_core = sTB - K["tf"] * (fx - sFX) + dTa * K["tt"] * jc * lF \
+                  - dS * K["ts"] * lF - K["tr"] * max(0, dTa) * 10 * lF
+        # GDP cycle: strong growth sucks in imports → trade worsens
+        tb_gdp = -3.0 * max(0, g - 2.0)
+        # Oil import cost effect
+        tb_oil = -0.08 * dO
+        # Structural deficit trend (US trade deficit slowly worsens over time)
+        tb_trend = -1.0 * q / max(N, 1) if not bt else 0
+        # Momentum
+        tb_mom = 0.15 * (tb - prev_tb)
+        prev_tb = tb
+        tb = clamp(tb_core + tb_gdp + tb_oil + tb_trend + tb_mom + n * 3, -1800, 300)
 
         # ── FCI ──
         fR = -K["fe"] * spC
@@ -357,6 +380,19 @@ def simulate(params: dict,
         hi = clamp(hi + ((15 * (5 - mr) if mr < 5 else -K["hr"] * (mr - 5) ** K["hc"])
                          + 2 * (cc - sCC) * K["hd"] + n * 2) * 0.15, 100, 600)
 
+        # ── Gold ──
+        # Gold responds to: real rates (inverse), inflation expectations, FCI (safe haven),
+        # dollar weakness, debt concerns, and has long-run inflation hedge trend
+        real_rate = by - ie  # 10Y yield minus inflation expectations
+        gold_real_rate = -25.0 * (real_rate - 1.0)  # gold rises when real rates fall below 1%
+        gold_inflation = 8.0 * max(0, ie - 2.5)     # inflation hedge above anchor
+        gold_safe_haven = 40.0 * max(0, fci)         # flight to safety
+        gold_dollar = -6.0 * (fx - sFX)              # inverse dollar relationship
+        gold_debt = 3.0 * max(0, dtg - 120)          # debasement fears
+        gold_trend = gold * 0.005 if not bt else 0   # ~2% annual trend (central bank buying)
+        gold = clamp(gold + gold_real_rate + gold_inflation + gold_safe_haven
+                     + gold_dollar + gold_debt + gold_trend + n * 15, 800, 8000)
+
         rl = "recession" if rW > 0.5 else ("overheating" if oW > 0.5 else "normal")
         label = p.get("q", f"Q{q + 1}") if isinstance(p, dict) else f"Q{q + 1}"
 
@@ -364,7 +400,8 @@ def simulate(params: dict,
             label=label,
             gdpGrowth=round(g, 2), inflation=round(inf, 2),
             unemployment=round(u, 2), currencyIndex=round(fx, 1),
-            sp500Index=round(sp), bondYield10Y=round(by, 2),
+            sp500Index=round(sp), goldPrice=round(gold),
+            bondYield10Y=round(by, 2),
             tradeBalance=round(tb), debtToGDP=round(dtg, 1),
             consumerConfidence=round(cc, 1), housingIndex=round(hi),
             inflExpectations=round(ie, 2), fci=round(fci, 3),

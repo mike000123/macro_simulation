@@ -184,7 +184,8 @@ with st.sidebar:
 
         ic = {"g": cur_act["gdpGrowth"], "i": cur_act["inflation"], "u": cur_act["unemployment"],
               "fx": cur_act["currencyIndex"], "sp": cur_act["sp500Index"], "by": cur_act["bondYield10Y"],
-              "tb": cur_act["tradeBalance"], "cc": cur_act["consumerConfidence"], "dtg": cur_inp["debtToGDP"]}
+              "tb": cur_act["tradeBalance"], "cc": cur_act["consumerConfidence"], "dtg": cur_inp["debtToGDP"],
+              "gold": cur_act.get("goldPrice", 2900)}
         results = simulate(p, initial_conditions=ic)
 
         # ── Earnings Model ──
@@ -324,6 +325,8 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
 
         # DXY
         st.plotly_chart(plot_market(df, "currencyIndex", "DXY", CL["cy"], "USD Index (DXY)"), use_container_width=True)
+        # Gold
+        st.plotly_chart(plot_market(df, "goldPrice", "Gold", CL["am"], "Gold ($/oz)"), use_container_width=True)
         # Trade Balance
         st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
 
@@ -331,31 +334,67 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.markdown("""## How to Use MacroScope
 
 ### 🔮 Forecast from Now (default)
-Loads latest US macro conditions automatically and projects 24 quarters forward.
-Adjust sidebar sliders to test policy deviations from current state.
-
-**Live data:** Uses FRED public CSV endpoint (no API key needed). Falls back to
-built-in Q1 2025 defaults if FRED is unreachable. Edit `current_state.py` to update offline values.
+Loads latest US macro conditions and projects 24 quarters forward.
+Adjust sidebar sliders to test policy deviations. Uses FRED public CSV (no API key needed),
+falls back to built-in Q1 2025 defaults if unreachable.
 
 ### 🎛️ What-If Scenarios
-Hypothetical mode. Pick a preset, adjust all inputs freely. Useful for comparing
-theoretical policy mixes without anchoring to current conditions.
+Hypothetical mode. Pick a preset, adjust all inputs freely.
 
 ### 🔬 Historical Backtest
-Validates the model against 5 crisis periods (1979–2024). Scoring scales
-adapt to each era's volatility. 55–65 = institutional-grade.
+Validates against 5 crisis periods (1979–2024). Era-adaptive scoring. 55–65 = institutional-grade.
 
-### Charts Explained
-- **Dashboard**: Multi-line overlay of GDP, CPI, unemployment, wages over 24 quarters
-- **Growth**: Individual area charts for GDP, unemployment, wages, consumer confidence
-- **Prices**: Inflation vs expectations vs wages; bond yield vs debt trajectory
-- **Markets**: S&P 500, DXY (USD index), trade balance — zoomed to actual data range
+---
+
+### 📊 S&P 500: Dual Model System
+
+Use the **S&P 500 Model** radio in the sidebar to choose **Macro Only**, **Earnings Only**, or **Compare Both**.
+
+**Macro Model (GDP-Trend):** Equities grow with nominal GDP (real growth + inflation).
+At 2.4% GDP + 2.8% CPI ≈ 5.2% annualized. This is the sustainable fundamentals floor.
+Responds to policy changes but cannot capture earnings surprises or sentiment.
+
+**Earnings Model (EPS × P/E):**
+1. **EPS Path** — Quarterly trajectory from annual growth estimates (Y1/Y2/Y3/Y4-6), auto-derived from macro or manually overridden
+2. **P/E Multiple** — Gordon Growth Model (1 / (required return − growth)), adjusted for:
+   - FCI stress → compresses up to 2 points
+   - Above-trend GDP → expands ~0.5 per point
+   - 10Y above 4.5% → compresses ~0.8 per point
+3. **Fair Value** = EPS × Adjusted P/E
+4. **Buyback Lift** — ~2%/yr mechanical support from share reduction
+5. **Price Path** — 8%/quarter mean-reversion to fair value + 15% momentum carry
+
+**Editable inputs** (Earnings Assumptions expander): trailing EPS, forward growth rates,
+buyback yield, equity risk premium. All auto-populated — override any to test your thesis.
+
+**When models diverge:** Large spread signals either aggressive earnings estimates
+(bullish consensus) or a structural shift the macro model misses (e.g. AI productivity).
+
+---
+
+### 🥇 Gold Model
+Gold responds to five channels:
+- **Real rates** (inverse) — rises when 10Y minus inflation expectations falls below 1%
+- **Inflation expectations** — hedge demand above 2.5%
+- **FCI (safe haven)** — crisis buying
+- **Dollar weakness** — inverse DXY relationship
+- **Debt/GDP concerns** — debasement fears above 120%
+- **Central bank trend** — ~2%/yr structural demand from reserve diversification
+
+---
+
+### Charts
+- **Dashboard**: GDP, CPI, unemployment, wages overlay
+- **Growth**: Individual area charts for GDP, unemployment, wages, confidence
+- **Prices**: Inflation vs expectations; bonds vs debt trajectory
+- **Markets**: S&P (macro vs earnings), DXY, Gold, Trade Balance
 
 ### Architecture
 ```
-app.py             ← This UI
+app.py             ← Streamlit UI
 engine.py          ← 21-channel simulation + coefficients
-scoring.py         ← Era-adaptive scoring
+earnings.py        ← EPS consensus + P/E fair value model
+scoring.py         ← Era-adaptive backtest scoring
 data.py            ← 5 crisis datasets (112 quarters)
 current_state.py   ← Current macro state (offline + FRED CSV)
 ```""")

@@ -32,6 +32,7 @@ OFFLINE_ACTUALS = {
     "unemployment": 4.2,        # UNRATE
     "currencyIndex": 104.0,     # ICE DXY / manual
     "sp500Index": 5600,         # manual
+    "goldPrice": 2900,          # LBMA / manual
     "bondYield10Y": 4.35,       # DGS10
     "tradeBalance": -850,       # manual
     "consumerConfidence": 98.0, # manual
