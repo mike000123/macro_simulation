@@ -110,6 +110,7 @@ class SimResult:
     unemployment: float = 0
     currencyIndex: float = 100
     sp500Index: float = 5200
+    sp500Earnings: float = 0       # Earnings-model S&P (0 = not computed)
     bondYield10Y: float = 4.3
     tradeBalance: float = -780
     debtToGDP: float = 123

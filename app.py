@@ -13,6 +13,7 @@ from engine import simulate, SimResult
 from scoring import score, SCORE_VARS
 from data import DATASETS
 from current_state import get_current_state
+from earnings import EarningsConsensus, earnings_equity_model, consensus_from_macro
 
 st.set_page_config(page_title="MacroScope V6", layout="wide", page_icon="Σ")
 
@@ -185,6 +186,34 @@ with st.sidebar:
               "fx": cur_act["currencyIndex"], "sp": cur_act["sp500Index"], "by": cur_act["bondYield10Y"],
               "tb": cur_act["tradeBalance"], "cc": cur_act["consumerConfidence"], "dtg": cur_inp["debtToGDP"]}
         results = simulate(p, initial_conditions=ic)
+
+        # ── Earnings Model ──
+        st.divider()
+        eq_mode = st.radio("S&P 500 Model", ["Macro Only", "Earnings Only", "Compare Both"], index=2,
+                           help="Macro: GDP-trend driven. Earnings: EPS consensus + P/E multiples.")
+
+        if eq_mode != "Macro Only":
+            with st.expander("📊 Earnings Assumptions", expanded=False):
+                auto_consensus = consensus_from_macro(
+                    cur_act["gdpGrowth"], cur_act["inflation"],
+                    p["fedRate"], p["productivityGrowth"], cur_act["sp500Index"])
+                st.caption(f"Auto-derived from macro state. Override below:")
+                e_trailing = st.number_input("Trailing EPS ($)", 100.0, 400.0, fl(auto_consensus.trailing_eps), 5.0)
+                e_y1 = st.slider("EPS Growth Y1 (%)", -10.0, 25.0, fl(auto_consensus.eps_growth_y1), 0.5)
+                e_y2 = st.slider("EPS Growth Y2 (%)", -5.0, 20.0, fl(auto_consensus.eps_growth_y2), 0.5)
+                e_y3 = st.slider("EPS Growth Y3 (%)", -5.0, 15.0, fl(auto_consensus.eps_growth_y3), 0.5)
+                e_lt = st.slider("EPS Growth Y4-6 (%)", 0.0, 12.0, fl(auto_consensus.eps_growth_y4_6), 0.5)
+                e_bb = st.slider("Buyback Yield (%)", 0.0, 5.0, fl(auto_consensus.buyback_yield), 0.25)
+                e_erp = st.slider("Equity Risk Premium (%)", 2.0, 8.0, fl(auto_consensus.equity_risk_premium), 0.25)
+
+                consensus = EarningsConsensus(
+                    trailing_eps=e_trailing, eps_growth_y1=e_y1, eps_growth_y2=e_y2,
+                    eps_growth_y3=e_y3, eps_growth_y4_6=e_lt,
+                    buyback_yield=e_bb, equity_risk_premium=e_erp)
+            sp_earnings = earnings_equity_model(consensus, results, cur_act["sp500Index"])
+            for i, val in enumerate(sp_earnings):
+                results[i].sp500Earnings = val
+
         df = results_to_df(results)
         L = results[-1]
         ref = {"gdp": cur_act["gdpGrowth"], "inf": cur_act["inflation"], "u": cur_act["unemployment"],
@@ -204,6 +233,24 @@ with st.sidebar:
         p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, fl(p["productivityGrowth"]), 0.1)
         p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, fl(p["laborForceGrowth"]), 0.1)
         results = simulate(p)
+
+        # ── Earnings Model ──
+        st.divider()
+        eq_mode = st.radio("S&P 500 Model", ["Macro Only", "Earnings Only", "Compare Both"], index=0,
+                           key="whatif_eq", help="Macro: GDP-trend. Earnings: EPS consensus + P/E.")
+        if eq_mode != "Macro Only":
+            with st.expander("📊 Earnings Assumptions", expanded=False):
+                auto_c = consensus_from_macro(2.5, 3.2, p["fedRate"], p["productivityGrowth"], 5200)
+                e_y1 = st.slider("EPS Growth Y1 (%)", -10.0, 25.0, fl(auto_c.eps_growth_y1), 0.5, key="wi_y1")
+                e_y2 = st.slider("EPS Growth Y2 (%)", -5.0, 20.0, fl(auto_c.eps_growth_y2), 0.5, key="wi_y2")
+                e_lt = st.slider("EPS Growth Y4-6 (%)", 0.0, 12.0, fl(auto_c.eps_growth_y4_6), 0.5, key="wi_lt")
+                consensus = EarningsConsensus(trailing_eps=auto_c.trailing_eps,
+                    eps_growth_y1=e_y1, eps_growth_y2=e_y2, eps_growth_y3=(e_y1+e_lt)/2,
+                    eps_growth_y4_6=e_lt, equity_risk_premium=auto_c.equity_risk_premium)
+            sp_earn = earnings_equity_model(consensus, results, 5200)
+            for i, val in enumerate(sp_earn):
+                results[i].sp500Earnings = val
+
         df = results_to_df(results)
         L = results[-1]
         ref = {"gdp": 2.5, "inf": 3.2, "u": 4.0, "sp": 5200, "by": 4.3, "fx": 100, "wg": 3.5}
@@ -247,11 +294,37 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.plotly_chart(fig2, use_container_width=True)
 
     with tab_m:
-        # S&P 500: level variable (~5000-6000). MUST NOT fill to zero.
-        st.plotly_chart(plot_market(df, "sp500Index", "S&P 500", CL["gn"], "S&P 500"), use_container_width=True)
-        # DXY: level variable (~80-120). MUST NOT fill to zero.
+        # S&P 500 — dual model comparison
+        has_earnings = df["sp500Earnings"].max() > 0
+        if has_earnings:
+            fig_sp = go.Figure()
+            fig_sp.add_trace(go.Scatter(x=df["label"], y=df["sp500Index"], mode="lines",
+                name="Macro Model (GDP-trend)", line=dict(color=CL["gn"], width=2.5)))
+            fig_sp.add_trace(go.Scatter(x=df["label"], y=df["sp500Earnings"], mode="lines",
+                name="Earnings Model (EPS×P/E)", line=dict(color=CL["am"], width=2.5, dash="dot")))
+            fig_sp.update_layout(**DARK_LAYOUT, height=350, title="S&P 500 — Macro vs Earnings Model")
+            st.plotly_chart(fig_sp, use_container_width=True)
+
+            # Summary comparison
+            c1, c2 = st.columns(2)
+            macro_end = df["sp500Index"].iloc[-1]
+            earn_end = df["sp500Earnings"].iloc[-1]
+            macro_start = df["sp500Index"].iloc[0]
+            earn_start = df["sp500Earnings"].iloc[0]
+            c1.metric("Macro Model (6Y)", f"{macro_end:,.0f}",
+                      f"{(macro_end/macro_start - 1)*100:+.1f}% total")
+            c2.metric("Earnings Model (6Y)", f"{earn_end:,.0f}",
+                      f"{(earn_end/earn_start - 1)*100:+.1f}% total")
+            spread = earn_end - macro_end
+            st.caption(f"Spread: **{spread:+,.0f}** points ({spread/macro_end*100:+.1f}%). "
+                       f"{'Earnings model more bullish' if spread > 0 else 'Macro model more bullish'}. "
+                       f"Divergence reflects the gap between fundamentals-driven and sentiment/earnings-driven valuations.")
+        else:
+            st.plotly_chart(plot_market(df, "sp500Index", "S&P 500", CL["gn"], "S&P 500 (Macro Model)"), use_container_width=True)
+
+        # DXY
         st.plotly_chart(plot_market(df, "currencyIndex", "DXY", CL["cy"], "USD Index (DXY)"), use_container_width=True)
-        # Trade Balance: also a level variable (negative), use market chart
+        # Trade Balance
         st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
 
     with tab_h:
