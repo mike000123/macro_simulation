@@ -219,6 +219,10 @@ with st.sidebar:
         L = results[-1]
         ref = {"gdp": cur_act["gdpGrowth"], "inf": cur_act["inflation"], "u": cur_act["unemployment"],
                "sp": cur_act["sp500Index"], "by": cur_act["bondYield10Y"], "fx": cur_act["currencyIndex"], "wg": 3.5}
+        # Store for Data tab
+        data_source = src
+        policy_inputs = p.copy()
+        initial_state = cur_act.copy()
 
     elif mode == "🎛️ What-If Scenarios":
         preset = st.selectbox("Preset", list(WHATIF_PRESETS.keys()))
@@ -255,6 +259,12 @@ with st.sidebar:
         df = results_to_df(results)
         L = results[-1]
         ref = {"gdp": 2.5, "inf": 3.2, "u": 4.0, "sp": 5200, "by": 4.3, "fx": 100, "wg": 3.5}
+        # Store for Data tab
+        data_source = f"What-If Preset: {preset}"
+        policy_inputs = p.copy()
+        initial_state = {"gdpGrowth": 2.5, "inflation": 3.2, "unemployment": 4.0,
+                         "currencyIndex": 100, "sp500Index": 5200, "goldPrice": 2900,
+                         "bondYield10Y": 4.3, "tradeBalance": -780, "consumerConfidence": 98}
     else:
         results = df = L = ref = None
 
@@ -263,8 +273,8 @@ with st.sidebar:
 # FORECAST / WHAT-IF CONTENT
 # ═══════════════════════════════════════════════════════════════
 if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
-    tab_d, tab_g, tab_p, tab_m, tab_h = st.tabs(
-        ["◉ Dashboard", "📈 Growth", "🔥 Prices", "💹 Markets", "❓ Help"])
+    tab_d, tab_g, tab_p, tab_m, tab_data, tab_h = st.tabs(
+        ["◉ Dashboard", "📈 Growth", "🔥 Prices", "💹 Markets", "📋 Data", "❓ Help"])
 
     with tab_d:
         if "Forecast" in mode:
@@ -329,6 +339,77 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.plotly_chart(plot_market(df, "goldPrice", "Gold", CL["am"], "Gold ($/oz)"), use_container_width=True)
         # Trade Balance
         st.plotly_chart(plot_market(df, "tradeBalance", "Trade Balance ($B)", CL["pk"], "Trade Balance ($B)"), use_container_width=True)
+
+    with tab_data:
+        st.markdown("### 📋 Input Data Used for This Forecast")
+        st.caption(f"Source: **{data_source}**")
+
+        col_pol, col_state = st.columns(2)
+
+        with col_pol:
+            st.markdown("##### Policy Inputs (slider values)")
+            pol_display = {
+                "Fed Funds Rate (%)": policy_inputs.get("fedRate"),
+                "Gov Spending ($T)": policy_inputs.get("govSpending"),
+                "Tax Rate (%)": policy_inputs.get("taxRate"),
+                "M2 Growth (%)": policy_inputs.get("moneySupplyGrowth"),
+                "Tariff Rate (%)": policy_inputs.get("tariffRate"),
+                "Oil Price ($/bbl)": policy_inputs.get("oilPrice"),
+                "Labor Force Growth (%)": policy_inputs.get("laborForceGrowth"),
+                "Productivity Growth (%)": policy_inputs.get("productivityGrowth"),
+                "Debt/GDP (%)": policy_inputs.get("debtToGDP"),
+            }
+            st.dataframe(
+                pd.DataFrame({"Input": pol_display.keys(), "Value": pol_display.values()}),
+                use_container_width=True, hide_index=True,
+            )
+
+        with col_state:
+            st.markdown("##### Starting Economic State")
+            state_display = {
+                "GDP Growth (%)": initial_state.get("gdpGrowth"),
+                "Inflation / CPI (%)": initial_state.get("inflation"),
+                "Unemployment (%)": initial_state.get("unemployment"),
+                "S&P 500": initial_state.get("sp500Index"),
+                "Gold ($/oz)": initial_state.get("goldPrice"),
+                "10Y Yield (%)": initial_state.get("bondYield10Y"),
+                "DXY (USD Index)": initial_state.get("currencyIndex"),
+                "Trade Balance ($B)": initial_state.get("tradeBalance"),
+                "Consumer Confidence": initial_state.get("consumerConfidence"),
+            }
+            st.dataframe(
+                pd.DataFrame({"Variable": state_display.keys(), "Value": state_display.values()}),
+                use_container_width=True, hide_index=True,
+            )
+
+        # Engine-derived adaptive parameters
+        st.markdown("##### Engine-Derived Parameters (auto from starting state)")
+        r0 = results[0]
+        ada_display = {
+            "Adaptive NAIRU": f"{max(3.5, min(6, initial_state.get('unemployment', 4) * 0.85)):.1f}%",
+            "Inflation Anchor": f"{max(1.5, min(8, initial_state.get('inflation', 3) * 0.9)):.1f}%",
+            "Starting Regime": r0.regime,
+            "Starting FCI": f"{r0.fci:.3f}",
+            "Fiscal Multiplier": f"{r0.fiscalMultiplier:.2f}x",
+        }
+        st.dataframe(
+            pd.DataFrame({"Parameter": ada_display.keys(), "Value": ada_display.values()}),
+            use_container_width=True, hide_index=True,
+        )
+
+        # Full projection table (downloadable)
+        st.markdown("##### Full Projection (24 quarters)")
+        proj_cols = ["label", "gdpGrowth", "inflation", "unemployment", "sp500Index",
+                     "goldPrice", "bondYield10Y", "currencyIndex", "tradeBalance",
+                     "wageGrowth", "consumerConfidence", "fci", "regime"]
+        proj_df = df[proj_cols].copy()
+        proj_df.columns = ["Quarter", "GDP%", "CPI%", "U%", "S&P", "Gold", "10Y%",
+                           "DXY", "Trade$B", "Wages%", "Conf", "FCI", "Regime"]
+        st.dataframe(proj_df, use_container_width=True, hide_index=True)
+
+        # CSV download
+        csv = proj_df.to_csv(index=False)
+        st.download_button("📥 Download Projection CSV", csv, "macroscope_forecast.csv", "text/csv")
 
     with tab_h:
         st.markdown("""## How to Use MacroScope
