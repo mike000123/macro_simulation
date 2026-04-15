@@ -19,12 +19,13 @@ K = {
     "gdp_fci_base": 0.2, "gdp_fci_crisis": 0.6, "gdp_fci_th": 0.3,
     "gdp_p": 0.6, "gdp_l": 0.4, "gdp_pb": 2.0,
     "gdp_ic": 0.3, "gdp_w": 0.000485, "gdp_g": 0.1,
-    # Inflation
+    # Inflation — added inf_rate for Volcker disinflation
     "inf_pl": 0.35, "inf_pc": 0.6, "inf_ps": 0.28,
     "inf_ta": 0.139, "inf_o": 0.05, "inf_m": 0.03,
     "inf_dc": 0.25, "inf_dl": 0.12,
     "inf_ew": 0.137, "inf_an": 0.25, "inf_ah": 0.4,
     "inf_dt": 6, "inf_da": 0.1, "inf_fx": 0.016, "inf_wp": 0.15,
+    "inf_rate": 0.04,                                               # NEW: direct rate → CPI (moderate)
     # Unemployment
     "uo_b": 0.2, "uo_c": 0.45, "uo_t": 0.4,
     "uo_rate_th": 8, "uo_rate_amp": 0.015,
@@ -33,22 +34,22 @@ K = {
     # Currency
     "fx_rb": 1.0, "fx_rl": 0.1, "fx_f": 1.5, "fx_m": 0.609,
     "fx_ct": 170, "fx_ca": 0.05, "fx_to": 0.01,
-    # Equities
+    # Equities — stronger crash + mean-reversion
     "eq_e": 2.848, "eq_p": 30, "eq_r": 225.6, "eq_m": 40,
-    "eq_f": 200, "eq_pg": -1, "eq_pf": 0.5, "eq_pm": 300,
-    "eq_wf": 0.005, "eq_mo": 0.6, "eq_mr": 0.15,
-    # Bonds
-    "bf": 0.35, "bfl": 0.12, "bi": 0.4, "bt": 0.3,
-    "bv": 0.15, "bs": 0.02, "bif": 0.2,
+    "eq_f": 300, "eq_pg": -1, "eq_pf": 0.3, "eq_pm": 450,        # ↑ FCI crash
+    "eq_wf": 0.005, "eq_mo": 0.5, "eq_mr": 0.22,                  # ↑ mean-reversion
+    # Bonds — higher fed passthrough
+    "bf": 0.45, "bfl": 0.14, "bi": 0.35, "bt": 0.25,
+    "bv": 0.15, "bs": 0.02, "bif": 0.25,
     # Debt
     "ds": 1.5, "dtt": 0.3, "d1": 150, "d2": 180,
     "dq": 0.3, "drs": 0.5, "da": 0.4,
     # Trade
     "tf": 2, "tt": 8, "ts": 15, "tj": 4, "tr": 0.3,
-    # FCI
-    "fe": 0.1, "fd_t": 140, "fd": 0.3,
-    "fg_t": 0.5, "fg": 0.5, "fa_t": 0.3, "fa": 1.5, "fc": 0.2,
-    "fy": 0.3, "fec": 0.4,
+    # FCI — lower thresholds for earlier activation
+    "fe": 0.12, "fd_t": 135, "fd": 0.35,
+    "fg_t": 0.5, "fg": 0.55, "fa_t": 0.28, "fa": 1.6, "fc": 0.22,
+    "fy": 0.35, "fec": 0.45,
     # Consumer / Housing
     "ccl": 5, "cci": 3, "ccf": 8, "ccm": 0.2, "ccg": 3,
     "hr": 8, "hc": 1.3, "hd": 0.15,
@@ -288,10 +289,12 @@ def simulate(params: dict,
         uG = NAIRU - u
         ph = K["inf_pl"] * uG + K["inf_pc"] * uG * uG if uG > 0 else K["inf_ps"] * uG
         demPull = K["inf_dc"] * gap * gap if gap > 0 else K["inf_dl"] * gap
+        # Direct rate→inflation: high rates crush demand and reduce inflation (Volcker mechanism)
+        rate_disinflation = -K["inf_rate"] * max(0, dR) * lM  # only when rates RISE above baseline
         inf = clamp(ANCHOR + ph
                      + (0.15 * (ie - ANCHOR - 2) if ie > ANCHOR + 2 else 0)
                      + K["inf_ta"] * dTa * lF + K["inf_o"] * dO * lM
-                     + K["inf_m"] * dM * lM + demPull
+                     + K["inf_m"] * dM * lM + demPull + rate_disinflation
                      + K["inf_ew"] * (ie - ANCHOR)
                      + K["inf_fx"] * max(0, 100 - fx) * lM
                      + 0.1 * max(0, wg - potG - 1) + n * 0.4, -3, 20)
