@@ -303,20 +303,40 @@ def simulate(params: dict,
         if inf > K["inf_dt"] and q > 4:
             ie += K["inf_da"] * (inf - K["inf_dt"])
 
-        # ── Unemployment ──
+        # ── Unemployment (multi-channel with cumulative dynamics) ──
         if u > K["uh_t"]:
             hud += 1
         else:
             hud = max(0, hud - 1)
         ns = (K["uh_r"] * (hud - K["uh_d"]) * (u - K["uh_t"])
               if u > K["uh_t"] and hud > K["uh_d"] else 0)
-        uI = -eOkun * gap - K["ul"] * dL * lS + K["ut"] * dTa * lF
-        if fci > 0.3:
-            uI += 0.3 * fci
+
+        # Channel 1: Okun's law (output gap → unemployment)
+        uI = -eOkun * gap
+
+        # Channel 2: Cumulative GDP weakness (sustained below-trend growth accumulates)
+        cum_weak = max(0, 1.5 - g) * 0.15  # moderate accumulation
+
+        # Channel 3: Direct FCI stress (credit tightening → layoffs in finance, construction, retail)
+        fci_unemp = 0.5 * max(0, fci - 0.1) ** 1.3  # convex — gets much worse above FCI 0.5
+
+        # Channel 4: Rate drag (high rates kill housing/auto/capex employment)
+        rate_unemp = K["uo_rate_amp"] * max(0, p["fedRate"] - K["uo_rate_th"])
+
+        # Channel 5: Labor force collapse (direct)
+        labor_unemp = 0.0
         if p["laborForceGrowth"] < -1:
-            uI += K["ul_crisis"] * abs(p["laborForceGrowth"] + 1)
+            labor_unemp = K["ul_crisis"] * abs(p["laborForceGrowth"] + 1)
         if sf > 1:
-            uI += abs(dL) * 1.5
+            labor_unemp += abs(dL) * 1.5
+
+        # Channel 6: Tariff drag
+        tariff_unemp = K["ut"] * dTa * lF
+
+        # Channel 7: Labor supply (normal range)
+        labor_supply = -K["ul"] * dL * lS
+
+        uI += cum_weak + fci_unemp + rate_unemp + labor_unemp + tariff_unemp + labor_supply
         u = clamp((sU + ns) + uI + n * 0.25, 1.5, 18)
 
         # ── Taylor Rule (endogenous Fed response) ──
@@ -360,13 +380,37 @@ def simulate(params: dict,
                + eq_trend)
         sp = clamp(sp + spC + n * 30, 50, 14000)
 
-        # ── Bonds (sqrt scaling) ──
+        # ── Bonds (forward-looking term structure) ──
+        # 10Y yield = expected average short rate over next 10Y + term premium
+        # Key insight: when fed rate is 18%, market expects it to return to neutral (~5-6%)
+        # so 10Y prices in the full path, not just the spot rate.
         _, rp = debt_calc(dtg, by, g, dS * K["ds"] * 0.2 - dT * K["dtt"] * 0.5)
-        bfp = K["bf"] + K["bfl"] * np.sqrt(max(0, eff_rate))
-        itp = K["bif"] * (inf - ANCHOR - 1) if inf > ANCHOR + 1 else 0
-        by = clamp(bfp * eff_rate + K["bi"] * ie + K["bt"] + rp
-                    + K["bv"] * abs(g - 2.5) * 0.2
-                    + K["bs"] * max(0, dtg - 100) + itp + n * 0.08, 0.1, 16)
+        
+        # Expected rate path: blend of current rate toward long-run neutral
+        # Neutral rate ≈ inflation anchor + real neutral (~2%)
+        r_neutral = ANCHOR + 2.0
+        # How fast the market expects rates to normalize (faster when rates are extreme)
+        rate_gap = abs(eff_rate - r_neutral)
+        norm_speed = 0.15 + 0.05 * min(rate_gap, 10)  # 15-65% per "year" toward neutral
+        # Expected average rate over 10Y horizon (geometric mean reversion)
+        exp_avg_rate = eff_rate * (1 - norm_speed) + r_neutral * norm_speed
+        # For very high rates (Volcker), heavier weight on normalization
+        if eff_rate > 10:
+            exp_avg_rate = exp_avg_rate * 0.7 + r_neutral * 0.3
+        
+        # Term premium: rises with inflation volatility, debt, and uncertainty
+        term_prem = (K["bt"]
+                     + K["bv"] * abs(inf - ANCHOR) * 0.3     # inflation risk
+                     + rp                                       # fiscal risk premium
+                     + K["bs"] * max(0, dtg - 100)             # debt premium
+                     + (K["bif"] * (inf - ANCHOR - 1) if inf > ANCHOR + 1 else 0))
+        
+        # Flight to quality: during crises, 10Y drops (safe haven)
+        flight = -0.5 * max(0, fci - 0.3) if fci > 0.3 else 0
+        
+        by_target = exp_avg_rate + term_prem + flight
+        # Smooth toward target (yields don't jump instantly)
+        by = clamp(by * 0.6 + by_target * 0.4 + n * 0.08, 0.1, 18)
 
         # ── Debt ──
         dtg, _ = debt_calc(dtg, by, g, dS * K["ds"] - dT * K["dtt"] + K["da"] * max(0, u - 5))
