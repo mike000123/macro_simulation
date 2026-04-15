@@ -630,73 +630,400 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
         st.download_button("📥 Download Projection CSV", csv, "macroscope_forecast.csv", "text/csv")
 
     with tab_h:
-        st.markdown("""## How to Use MacroScope
-
-### 🔮 Forecast from Now (default)
-Loads latest US macro conditions and projects 24 quarters forward.
-Adjust sidebar sliders to test policy deviations. Uses FRED public CSV (no API key needed),
-falls back to built-in Q1 2025 defaults if unreachable.
-
-### 🎛️ What-If Scenarios
-Hypothetical mode. Pick a preset, adjust all inputs freely.
-
-### 🔬 Historical Backtest
-Validates against 5 crisis periods (1979–2024). Era-adaptive scoring. 55–65 = institutional-grade.
+        st.markdown("""## MacroScope V6 — Technical Manual
 
 ---
 
-### 📊 S&P 500: Dual Model System
+### 1. Platform Overview
 
-Use the **S&P 500 Model** radio in the sidebar to choose **Macro Only**, **Earnings Only**, or **Compare Both**.
+MacroScope is a macroeconomic policy simulation platform that models how changes in monetary policy,
+fiscal policy, trade policy, and external shocks propagate through the US economy. It projects
+9 macro indicators over 24 quarters (6 years) using a 21-channel transmission engine with
+90+ calibrated coefficients, validated against 45 years of US economic history (1979–2024).
 
-**Macro Model (GDP-Trend):** Equities grow with nominal GDP (real growth + inflation).
-At 2.4% GDP + 2.8% CPI ≈ 5.2% annualized. This is the sustainable fundamentals floor.
-Responds to policy changes but cannot capture earnings surprises or sentiment.
-
-**Earnings Model (EPS × P/E):**
-1. **EPS Path** — Quarterly trajectory from annual growth estimates (Y1/Y2/Y3/Y4-6), auto-derived from macro or manually overridden
-2. **P/E Multiple** — Gordon Growth Model (1 / (required return − growth)), adjusted for:
-   - FCI stress → compresses up to 2 points
-   - Above-trend GDP → expands ~0.5 per point
-   - 10Y above 4.5% → compresses ~0.8 per point
-3. **Fair Value** = EPS × Adjusted P/E
-4. **Buyback Lift** — ~2%/yr mechanical support from share reduction
-5. **Price Path** — 8%/quarter mean-reversion to fair value + 15% momentum carry
-
-**Editable inputs** (Earnings Assumptions expander): trailing EPS, forward growth rates,
-buyback yield, equity risk premium. All auto-populated — override any to test your thesis.
-
-**When models diverge:** Large spread signals either aggressive earnings estimates
-(bullish consensus) or a structural shift the macro model misses (e.g. AI productivity).
+**Three operating modes:**
+- **🔮 Forecast from Now** — Loads real-time US data, projects forward with adjustable policy overrides
+- **🎛️ What-If Scenarios** — Hypothetical policy experiments from preset starting points
+- **🔬 Historical Backtest** — Validates model against 5 real crisis periods
 
 ---
 
-### 🥇 Gold Model
-Gold responds to five channels:
-- **Real rates** (inverse) — rises when 10Y minus inflation expectations falls below 1%
-- **Inflation expectations** — hedge demand above 2.5%
-- **FCI (safe haven)** — crisis buying
-- **Dollar weakness** — inverse DXY relationship
-- **Debt/GDP concerns** — debasement fears above 120%
-- **Central bank trend** — ~2%/yr structural demand from reserve diversification
+### 2. Data Sources
+
+#### 2.1 Current Economic State (Forecast Mode)
+Three-tier fallback strategy:
+1. **FRED Live** — Public CSV endpoint `fred.stlouisfed.org/graph/fredgraph.csv` (no API key)
+   - Series: FEDFUNDS, CPIAUCSL (→ YoY%), UNRATE, DGS10, M2SL (→ YoY%), GFDEGDQ188S
+2. **Local Cache** — `~/.macroscope_cache.json`, auto-saved on successful FRED fetch, expires 90 days
+3. **Hardcoded Defaults** — Q1 2025 snapshot in `current_state.py`, manually curated from FRED/BEA/BLS
+
+**Variables NOT from FRED** (require manual update in `current_state.py`):
+- Gov Spending ($T): BEA national accounts
+- Tax Rate (%): CBO effective federal revenue/GDP
+- Tariff Rate (%): USITC weighted average
+- Oil Price ($/bbl): EIA WTI spot
+- Labor Force Growth (%): BLS civilian labor force YoY
+- Productivity Growth (%): BLS nonfarm business productivity
+- S&P 500, Gold, DXY, Trade Balance, Consumer Confidence: manual/Yahoo/ICE/BEA/Conference Board
+
+#### 2.2 Historical Data (Backtest Mode)
+112 quarters of manually curated US macro data across 5 crisis periods, stored in `data.py`:
+- **Volcker Crisis 1979–83** (20 quarters): Fed rate 10→18.5→8.5%, CPI 9.9→3.7%
+- **Gulf War 1989–93** (20 quarters): Oil shock, mild recession, rate cuts 9.75→3%
+- **Dot-Com 2000–03** (16 quarters): Tech bust, 9/11, rate cuts 5.75→1%
+- **GFC 2007–10** (16 quarters): Subprime, Lehman, GDP -8.5%, unemployment to 10.7%
+- **Modern 2015–24** (40 quarters): ZLB exit, trade war, COVID, inflation surge
+
+Input data sourced from FRED (FEDFUNDS, CPIAUCSL, UNRATE, DGS10, M2SL), BEA (GDP, trade),
+BLS (labor, productivity), EIA (oil), ICE (DXY), S&P Dow Jones (S&P 500 index).
 
 ---
 
-### Charts
-- **Dashboard**: GDP, CPI, unemployment, wages overlay
-- **Growth**: Individual area charts for GDP, unemployment, wages, confidence
-- **Prices**: Inflation vs expectations; bonds vs debt trajectory
-- **Markets**: S&P (macro vs earnings), DXY, Gold, Trade Balance
+### 3. Simulation Engine (engine.py)
 
-### Architecture
+#### 3.1 Architecture
+The engine runs a quarterly time-step simulation. Each quarter:
+1. Reads policy inputs (rates, spending, tariffs, oil, etc.)
+2. Computes quarter-over-quarter deltas (rate *changes*, not just levels)
+3. Runs 21 transmission channels sequentially
+4. Outputs 9 macro indicators + internal state (FCI, regime, expectations)
+
+#### 3.2 Lag Structure
+Policy changes take effect gradually:
+- Monetary lag (lM): starts at 0.70, ramps to 0.92 over ~12 quarters
+- Fiscal lag (lF): starts at 0.65, ramps to 0.95
+- Structural lag (lS): starts at 0.40, ramps to 0.85
+
+These are faster than the original Friedman "long and variable lags" because
+modern financial markets transmit monetary policy faster via forward guidance and QE.
+
+#### 3.3 Era-Adaptive Design (no hardcoded dates)
+The engine derives key structural parameters from starting conditions:
+- **NAIRU** = startingUnemployment × 0.85, clamped [3.5, 6.0]
+- **Inflation Anchor** = startingCPI × 0.9, clamped [1.5, 8.0]
+- **Regime** classified endogenously from GDP/unemployment via smoothstep functions
+
+This means the same engine works for Volcker (NAIRU≈4.9, anchor≈8.0) and
+Modern era (NAIRU≈3.6, anchor≈2.5) without any era-specific code.
+
+#### 3.4 GDP Channel
 ```
-app.py             ← Streamlit UI
-engine.py          ← 21-channel simulation + coefficients
-earnings.py        ← EPS consensus + P/E fair value model
-scoring.py         ← Era-adaptive backtest scoring
-data.py            ← 5 crisis datasets (112 quarters)
-current_state.py   ← Current macro state (offline + FRED CSV)
-```""")
+GDP = potential_growth + fiscal_impulse + rate_impulse + rate_level_drag
+      + oil_impulse + oil_level_drag - FCI_drag + money_supply
+      + wealth_effect + inventory_cycle - global_spillover
+      + fiscal_auto_stabilizer
+```
+**Key innovation:** Uses quarter-over-quarter rate CHANGES for impulse (captures the
+shock of rate hikes) plus sustained rate LEVEL drag for rates above 6%. Previous versions
+only used level deltas from Q1 baseline, which produced flat GDP regardless of massive
+rate swings during Volcker.
+
+- **Fiscal multiplier**: Regime-dependent (1.0 normal, 1.8 recession, 0.4 overheating)
+- **ZLB constraint**: Below 0.5% rate, monetary transmission drops to 15% effectiveness
+- **Asymmetric response**: Negative GDP shocks amplified by 1.6x (recession asymmetry)
+
+#### 3.5 Inflation Channel
+```
+Inflation = anchor + Phillips_curve + demand_pull + oil_passthrough
+            + tariff_passthrough + money_supply + expectations_feedback
+            + FX_passthrough + wage_pressure + rate_disinflation
+```
+- **Non-linear Phillips Curve**: Convex below NAIRU (unemployment at 3% generates
+  much more inflation than unemployment at 4%). Linear above NAIRU.
+- **Adaptive expectations**: Blend speed 25% normal, 40% when inflation > anchor+3%
+- **De-anchoring**: When CPI > 6% for 4+ quarters, expectations accelerate away from anchor
+- **Rate → CPI channel** (`inf_rate=0.093`): Direct monetary restraint → disinflation.
+  Critical for modeling the Volcker disinflation (14% → 4% CPI).
+
+#### 3.6 Unemployment Channel (7-channel model)
+```
+Unemployment = startU + NAIRU_shift
+               + Okun's_law(output_gap)           # Ch1: traditional
+               + GDP_level_tracking(GDP)            # Ch2: when GDP<1% → sharp rise
+               + FCI_stress(fci)                    # Ch3: credit tightening → layoffs
+               + rate_drag(fedRate)                 # Ch4: high rates → housing/auto losses
+               + labor_collapse(laborForceGrowth)   # Ch5: COVID-type labor shock
+               + tariff_drag + labor_supply         # Ch6-7: smaller effects
+```
+**Key innovation:** Channel 2 tracks the GDP *level* directly, not just the dampened
+output gap. When GDP drops below 1%, unemployment rises 0.4pp per point. Below 0%,
+rises 0.6pp per point. This is why GFC unemployment now tracks from 4.5% → 7.0%
+(actual peaked at 10.7%) instead of staying stuck at 5%.
+
+- **Hysteresis**: After unemployment > 6% for 4+ quarters, NAIRU drifts upward (scarring)
+- **Crisis Okun's**: Amplifies from 0.12 (normal) to 0.27 (crisis) based on FCI
+
+#### 3.7 Currency (DXY) Channel
+```
+DXY = baseline + rate_differential × rate_sensitivity + FCI_effect
+      - money_dilution + current_account + GDP_cycle_feedback
+      + PPP_drift + momentum
+```
+- **Rate sensitivity** (`fx_rb=1.45`): Strong positive relationship with interest rates
+- **PPP drift**: High inflation gradually weakens currency over time
+- **GDP cycle**: Strong growth attracts capital → stronger dollar
+
+#### 3.8 Equity (S&P 500) Channel — Forward-Looking
+```
+S&P_change = GDP_effect + productivity_effect - rate_trajectory_effect
+             + money_supply + FCI_crash - panic_multiplier
+             + momentum + mean_reversion_to_actual + trend_growth
+```
+**Key innovation:** Uses rate *trajectory* (acceleration/deceleration) not rate level.
+When rate hikes decelerate, markets rally in anticipation — this is why the Volcker
+S&P model now recovers from 50 to 160 in 1983 (actual: 165) as markets anticipated
+the end of the tightening cycle.
+
+- **Panic multiplier**: When GDP < -1% AND FCI > 0.3, equity losses amplified 384x
+- **Mean-reversion** (`eq_mr=0.15`): In backtest mode, pulls toward actual S&P data
+- **Trend growth**: In forward mode, ≈ (GDP + CPI) × 0.25 per quarter (~5% annualized real)
+
+#### 3.9 Bond (10Y Yield) Channel — Forward-Looking Term Structure
+```
+10Y = expected_average_future_rate + term_premium + flight_to_quality
+```
+**Key innovation:** Markets expect the fed rate to normalize toward neutral
+(inflation_anchor + 2%). When the fed rate is 18% (Volcker), the 10Y doesn't
+go to 18% — it prices in normalization toward ~10%, producing ~13% (matching reality).
+
+- **Neutral rate** = inflation anchor + 2% real
+- **Normalization speed**: 15-65% per year depending on rate gap
+- **Term premium**: Base 0.76 + inflation volatility + fiscal risk + debt premium
+- **Flight to quality**: During high FCI, 10Y drops (safe haven buying)
+- **Smoothing**: 60% previous / 40% target per quarter (yields don't jump)
+
+#### 3.10 Gold Channel
+```
+Gold = previous + real_rate_effect + inflation_hedge + safe_haven
+       + dollar_inverse + debt_debasement + central_bank_trend
+```
+- **Real rates**: -25 × (10Y - inflExpectations - 1.0). Gold rises when real rates < 1%
+- **Inflation hedge**: +8 × max(0, expectations - 2.5%)
+- **Safe haven**: +40 × max(0, FCI). Convex crisis demand
+- **Dollar inverse**: -6 × (DXY change from baseline)
+- **Debt debasement**: +3 × max(0, debt/GDP - 120%)
+- **Central bank trend**: +0.5%/quarter (~2%/yr) in forward mode. Reflects structural
+  central bank gold accumulation (China, India, Russia diversifying reserves)
+
+#### 3.11 Taylor Rule (Endogenous Fed Response)
+Active during stress tests. The Fed adjusts rates based on:
+```
+taylor_adj = 0.25 × [0.5 × (inflation - anchor) + 0.5 × output_gap]
+effective_rate = fed_rate + taylor_adj
+```
+- 25% response speed per quarter (gradual, realistic)
+- Clamped to ±1.0pp maximum quarterly adjustment
+- User-adjustable aggressiveness slider (0x to 2x)
+
+#### 3.12 Fiscal Auto-Stabilizer
+Active during stress tests:
+```
+if GDP < 1.5%: fiscal_boost = fiscal_response × 0.12 × (1.5 - GDP)
+if GDP > 3.5%: fiscal_drag = -fiscal_response × 0.04 × (GDP - 3.5)
+```
+Uses previous quarter's GDP (lagged response, realistic). User-adjustable strength (0x to 2x).
+
+#### 3.13 FCI (Financial Conditions Index)
+Composite stress indicator combining:
+- Equity market decline → tighter
+- High debt/GDP → tighter
+- Low GDP growth → tighter
+- Yield curve inversion (fed rate > 10Y + 0.5) → tighter
+- Equity crash detection (>10% drawdown in 2 quarters) → tighter
+
+Dynamic range: [-0.5, +2.5]. Values above 0.3 activate crisis amplifiers in GDP and unemployment.
+
+#### 3.14 Other Channels
+- **Wages**: Adaptive, driven by NAIRU gap + productivity + inflation persistence
+- **Consumer Confidence**: Unemployment, wealth effect, inflation, FCI, GDP
+- **Housing**: Mortgage rate (10Y + 1.7%), consumer confidence
+- **Trade Balance**: FX level, tariffs (with J-curve), fiscal spending, oil imports, GDP cycle
+- **Debt/GDP**: Domar dynamics with tipping points at 150% and 180%
+
+---
+
+### 4. Earnings Model (earnings.py)
+
+#### 4.1 Purpose
+Alternative S&P 500 valuation model. While the macro model drives equities from GDP trends,
+the earnings model uses a bottom-up EPS × P/E framework.
+
+#### 4.2 Data Sources — IMPORTANT LIMITATION
+**The EPS estimates are NOT sourced from real analyst consensus data** (Bloomberg, IBES, FactSet).
+They are auto-derived from macro conditions using this formula:
+
+```
+Y1_EPS_growth ≈ nominal_GDP + productivity_premium + buyback_boost
+Y2_growth ≈ 0.9 × nominal_GDP + buyback_boost
+Y3_growth ≈ 0.85 × nominal_GDP + 0.8 × buyback_boost
+Y4-6_growth ≈ 0.8 × nominal_GDP + 0.5 × buyback_boost
+```
+
+Where:
+- nominal_GDP = real GDP growth + inflation (e.g., 2.4% + 2.8% = 5.2%)
+- productivity_premium = max(0, productivity - 1.0) × 2
+- buyback_boost = 2.0% (S&P 500 average share count reduction)
+
+**To use real consensus data**: Override the auto-derived values in the "Earnings Assumptions"
+expander with actual Y1/Y2/Y3 EPS growth estimates from your Bloomberg/FactSet terminal.
+
+#### 4.3 P/E Multiple
+Derived via Gordon Growth Model:
+```
+base_P/E = 1 / (required_return - eps_growth)
+required_return = 10Y_yield + equity_risk_premium (default 4.5%)
+```
+Then adjusted for macro conditions:
+- FCI stress: -2 points per unit of FCI
+- GDP above trend: +0.5 per percentage point
+- 10Y above 4.5%: -0.8 per percentage point
+- Clamped to [12, 30] P/E range
+
+#### 4.4 Price Path
+```
+fair_value = EPS × adjusted_P/E
+buyback_lift = S&P × buyback_yield / 4 (quarterly)
+S&P_new = S&P + 0.08 × (fair_value - S&P) + 0.15 × momentum + buyback_lift
+```
+8% quarterly mean-reversion to fair value, 15% momentum carry from previous change.
+
+---
+
+### 5. Stress Test System (stress.py)
+
+#### 5.1 Shock Profiles
+**5 historically calibrated** (extracted from `data.py`):
+- Only EXOGENOUS variables extracted: oil price, labor force, productivity, tariffs
+- POLICY variables (fed rate, spending, tax, M2) excluded — engine generates response via Taylor Rule
+- Source quarters documented in code for traceability
+
+**2 hypothetical** (hand-crafted, no direct historical parallel):
+- Trade War Escalation: tariffs +25pp over 8 quarters
+- Stagflation: oil +$50 + productivity collapse + tariff escalation
+
+#### 5.2 Three-Curve Comparison
+For each stress test, three simulations run:
+1. **Baseline** — no crisis
+2. **Stressed, No Response** — crisis applied, Taylor Rule OFF, fiscal OFF
+3. **Stressed, With Policy** — crisis applied, Taylor + fiscal active (adjustable)
+
+Difference between curves 2 and 3 shows exactly how much policy intervention helps.
+
+#### 5.3 Shock Injection Mechanics
+```
+Before onset: constant baseline policy
+During shock: baseline + exogenous_deltas × severity
+After shock: deltas decay exponentially (80%/quarter toward baseline)
+```
+
+---
+
+### 6. Monte Carlo Simulation
+
+#### 6.1 Noise Model
+Correlated random walk on all 8 policy inputs:
+```
+noise_q = 0.7 × (previous_noise) + 0.3 × N(0, σ) + N(0, 0.3σ)
+```
+Standard deviations calibrated to historical quarterly variation:
+- Fed rate: ±15bp, M2: ±1pp, Oil: ±$5, Tariffs: ±0.3pp
+- Gov spending: ±$50B, Tax: ±0.2pp, Labor: ±0.15pp, Productivity: ±0.3pp
+
+#### 6.2 Output
+Runs 50-500 simulations, computes 10th/50th/90th percentile cones.
+The 10-90% band represents the range of plausible outcomes given random input variation.
+Baseline (white line) should sit near the median (dashed).
+
+---
+
+### 7. Scoring System (scoring.py)
+
+#### 7.1 Per-Variable Score
+```
+score = 0.6 × MAE_score + 0.4 × directional_score
+MAE_score = 100 × (1 - MAE / adaptive_scale)
+directional_score = 100 × (fraction of quarters where model direction matches actual)
+```
+
+The 60/40 blend penalizes models that minimize absolute error but get the direction wrong
+(e.g., predicting S&P decline when actual rallied).
+
+#### 7.2 Era-Adaptive Scale
+Each variable's scoring scale adapts to the era's volatility:
+```
+scale = max(base_scale, std(actual_data) × 2.5)
+```
+So a GDP error of 4pp in the Volcker era (where GDP swung 16pp) is scored proportionally
+to a 1.5pp error in the modern era (where GDP swung 6pp).
+
+#### 7.3 Score Interpretation
+- **80-100**: Excellent tracking (rare for any macro model)
+- **65-80**: Good — captures direction and approximate magnitude
+- **50-65**: Fair — gets the general trend but misses amplitude or timing
+- **30-50**: Poor — significant structural misfit
+- **0-30**: Model fails for this variable/era combination
+
+---
+
+### 8. Coefficient Calibration (optimizer.py)
+
+25 key coefficients optimized via scipy `differential_evolution` across all 5 crisis eras simultaneously.
+Objective: minimize weighted-average error (GFC and Modern weighted 1.5x, others 0.8-1.0x).
+
+Run offline:
+```bash
+python optimizer.py --quick    # 12 params, ~15 seconds
+python optimizer.py            # 25 params, ~2.5 minutes
+python optimizer.py --full     # 50 params, ~15-30 minutes
+```
+Output: `optimized_K.json` — copy values into `engine.py`'s K dict.
+
+---
+
+### 9. Known Limitations
+
+1. **GDP amplitude dampened** — Model GDP swings are smaller than reality, especially in pre-2000 eras
+2. **Gulf War unemployment** — Model doesn't capture the slow unemployment rise because GDP stays too high
+3. **COVID shutdown** — Administrative lockdowns cannot be modeled; COVID GDP drop (-28%) is an outlier
+4. **Sentiment-driven equity moves** — AI hype, meme stocks, speculative bubbles are outside model scope
+5. **Adaptive expectations only** — No rational expectations or forward-looking consumer behavior
+6. **EPS estimates synthetic** — Not from real analyst consensus; override with Bloomberg data if available
+7. **DXY in Volcker** — Model undershoots the massive dollar rally (87→124) driven by capital inflows
+8. **Single-country model** — No global trade partner modeling, no EM spillover effects
+
+---
+
+### 10. File Architecture
+
+```
+app.py             ← Streamlit UI (753 lines) — 3 modes, 6 tabs, Plotly charts
+engine.py          ← Simulation engine (522 lines) — 21 channels, 90+ coefficients
+earnings.py        ← Earnings-based equity model (208 lines) — EPS × P/E + buybacks
+scoring.py         ← Backtest scoring (122 lines) — MAE + directional blend
+data.py            ← Historical data (197 lines) — 112 quarters across 5 eras
+current_state.py   ← Current state loader (203 lines) — FRED CSV → cache → offline
+stress.py          ← Stress test + Monte Carlo (279 lines) — 7 crisis profiles + MC cones
+optimizer.py       ← Coefficient optimizer (321 lines) — differential evolution
+```
+
+### 11. Theoretical Foundations
+
+The engine draws on established macroeconomic theory:
+- **IS-LM/AD-AS framework** for GDP-rate-inflation transmission
+- **Phillips Curve** (non-linear, expectations-augmented) for inflation-unemployment tradeoff
+- **Okun's Law** (state-dependent) for GDP-unemployment linkage
+- **Domar debt dynamics** for fiscal sustainability
+- **Gordon Growth Model** for equity valuation
+- **Expectations Hypothesis** for bond term structure
+- **Taylor Rule** for endogenous monetary policy response
+- **Purchasing Power Parity** for long-run FX drift
+- **Financial Accelerator** (simplified via FCI) for credit-cycle amplification
+
+No DSGE structure — this is a reduced-form model optimized for practical scenario analysis
+rather than theoretical consistency. Trade-off: faster computation, more intuitive controls,
+but cannot claim micro-founded welfare analysis.
+""")
+
 
 
 # ═══════════════════════════════════════════════════════════════
