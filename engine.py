@@ -129,11 +129,14 @@ class SimResult:
     nairuShift: float = 0
     taylorAdj: float = 0         # Taylor Rule rate adjustment
     effRate: float = 0           # Effective fed rate after Taylor
+    fiscalAdj: float = 0         # Counter-cyclical fiscal adjustment ($T)
 
 
 def simulate(params: dict,
              input_series: Optional[list] = None,
-             initial_conditions: Optional[dict] = None) -> List[SimResult]:
+             initial_conditions: Optional[dict] = None,
+             taylor_enabled: bool = True,
+             fiscal_response: float = 0.0) -> List[SimResult]:
     """
     Run the macro simulation engine.
 
@@ -141,6 +144,9 @@ def simulate(params: dict,
         params: Static policy parameters (for forward projection)
         input_series: List of per-quarter input dicts (for backtesting)
         initial_conditions: Starting state {g, i, u, fx, sp, by, tb, cc, dtg, hsp}
+        taylor_enabled: If True, Fed adjusts rates endogenously via Taylor Rule
+        fiscal_response: Auto-stabilizer strength (0=none, 1=normal, 2=aggressive).
+                         Adds counter-cyclical spending when GDP falls below potential.
 
     Returns:
         List of SimResult for each quarter
@@ -243,6 +249,16 @@ def simulate(params: dict,
         eOkun = clamp(lerp(K["uo_b"], K["uo_c"], smoothstep(K["uo_t"], 1, fci)) + rateStress, K["uo_b"], 0.7)
 
         # ── GDP ──
+        # Pre-compute fiscal auto-stabilizer from PREVIOUS quarter's gap (lagged response)
+        fiscal_adj = 0.0
+        if fiscal_response > 0 and bt:
+            # Trigger when GDP growth drops below 1.5% (not just negative gap)
+            gdp_shortfall = max(0, 1.5 - g)  # how far below trend
+            if gdp_shortfall > 0:
+                fiscal_adj = fiscal_response * 0.12 * gdp_shortfall  # spending boost
+            elif g > 3.5:
+                fiscal_adj = -fiscal_response * 0.04 * (g - 3.5)  # modest austerity
+
         potG = K["gdp_pb"] + dP * K["gdp_p"] * lS + dL * K["gdp_l"] * lS - ns * 0.15
         pot *= (1 + potG / 400)
         fi = logistic(dS * K["gdp_fs"] - dT * K["gdp_ft"], K["gdp_fc"], 1.2) * fm
@@ -258,6 +274,8 @@ def simulate(params: dict,
             rI += dL * sf
         if isReb:
             rI += p["laborForceGrowth"] * K["sr"] * 3
+        # Fiscal auto-stabilizer boost (from fiscal_response parameter)
+        rI += fiscal_adj * K["gdp_fs"] * fm
         rG = potG + rI * lF
         sh = rG - potG
         g = clamp(potG + (sh * asym if sh < 0 else sh) + n, -35, 40)
@@ -299,17 +317,12 @@ def simulate(params: dict,
         u = clamp((sU + ns) + uI + n * 0.25, 1.5, 18)
 
         # ── Taylor Rule (endogenous Fed response) ──
-        # Taylor: r = r_neutral + 0.5*(inf - target) + 0.5*(gap)
-        # Applied as adjustment to effective rate used in downstream channels.
-        # Only activates when inputs are a series (stress/MC), not pure forward.
         taylor_adj = 0.0
-        if bt:
-            r_neutral = ref_d["fedRate"]  # baseline rate as neutral
+        if taylor_enabled and bt:
+            r_neutral = ref_d["fedRate"]
             taylor_target = 0.5 * (inf - ANCHOR) + 0.5 * gap
-            # Gradual response: Fed adjusts 25% of Taylor prescription per quarter
             taylor_adj = clamp(taylor_target * 0.25, -1.0, 1.0)
         eff_rate = clamp(p["fedRate"] + taylor_adj, 0.0, 20.0)
-        # Recompute rate delta with Taylor adjustment for downstream use
         dR_eff = eff_rate - ref_d["fedRate"]
 
         # ── Currency (with cyclical dynamics) ──
@@ -425,7 +438,7 @@ def simulate(params: dict,
             regime=rl, regime_r=round(rW, 2), regime_n=round(nW, 2),
             regime_o=round(oW, 2), fiscalMultiplier=round(fm, 2),
             nairuShift=round(ns, 3), taylorAdj=round(taylor_adj, 3),
-            effRate=round(eff_rate, 3),
+            effRate=round(eff_rate, 3), fiscalAdj=round(fiscal_adj, 3),
         ))
 
     return results

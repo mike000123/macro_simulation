@@ -249,9 +249,11 @@ with st.sidebar:
         st.divider()
         shock_profiles = get_shock_profiles()
         enable_stress = st.checkbox("🔥 Enable Stress Test", value=False,
-                                     help="Inject a historical crisis shock into the forward projection")
+                                     help="Inject a crisis shock into the forward projection")
         stress_results = None
         stress_df = None
+        stress_nopol_results = None
+        stress_nopol_df = None
         if enable_stress and shock_profiles:
             shock_id = st.selectbox("Crisis Type",
                 list(shock_profiles.keys()),
@@ -262,8 +264,34 @@ with st.sidebar:
                                 help="Which quarter the crisis begins")
             severity = st.slider("Severity", 0.25, 2.0, 1.0, 0.25,
                                  help="1.0 = historical magnitude. 2.0 = twice as severe.")
+
+            st.markdown("##### Policy Response Controls")
+            fed_aggr = st.slider("Fed Aggressiveness", 0.0, 2.0, 1.0, 0.25,
+                key="fed_aggr",
+                help="0 = Fed does nothing. 1 = standard Taylor. 2 = double-speed response.")
+            fiscal_str = st.slider("Fiscal Stimulus", 0.0, 2.0, 1.0, 0.25,
+                key="fisc_str",
+                help="0 = no auto-stabilizers. 1 = normal. 2 = aggressive counter-cyclical spending.")
+
             stressed_series = apply_shock_to_params(p, shock, onset_q - 1, severity, 24)
-            stress_results = simulate(stressed_series[0], stressed_series, ic)
+
+            # Run 1: Stressed with NO policy response
+            stress_nopol_results = simulate(stressed_series[0], stressed_series, ic,
+                                            taylor_enabled=False, fiscal_response=0.0)
+            stress_nopol_df = results_to_df(stress_nopol_results)
+
+            # Run 2: Stressed WITH adjustable policy response
+            stress_results = simulate(stressed_series[0], stressed_series, ic,
+                                       taylor_enabled=(fed_aggr > 0),
+                                       fiscal_response=fiscal_str)
+            # Override Taylor aggressiveness via scaling the adjustment
+            if fed_aggr != 1.0 and fed_aggr > 0:
+                for i, r in enumerate(stress_results):
+                    base_taylor = stress_results[i].taylorAdj
+                    scaled = base_taylor * fed_aggr
+                    stress_results[i].taylorAdj = round(scaled, 3)
+                    stress_results[i].effRate = round(
+                        max(0, stressed_series[i]["fedRate"] + scaled), 3)
             stress_df = results_to_df(stress_results)
 
         # ── Monte Carlo ──
@@ -332,11 +360,15 @@ with st.sidebar:
                          "bondYield10Y": 4.3, "tradeBalance": -780, "consumerConfidence": 98}
         stress_df = None
         stress_results = None
+        stress_nopol_df = None
+        stress_nopol_results = None
         mc_pctiles = None
     else:
         results = df = L = ref = None
         stress_df = None
         stress_results = None
+        stress_nopol_df = None
+        stress_nopol_results = None
         mc_pctiles = None
 
 
@@ -445,80 +477,86 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
     if tab_stress is not None and stress_df is not None:
         with tab_stress:
             st.markdown(f"### 🔥 Stress Test: {shock_profiles[shock_id].name}")
-            st.caption(f"Shock onset: Q{onset_q} | Severity: {severity}x | Duration: {shock.n_quarters} quarters + recovery")
+            st.caption(f"Shock onset: Q{onset_q} | Severity: {severity}x | "
+                       f"Fed response: {fed_aggr}x | Fiscal: {fiscal_str}x | "
+                       f"Duration: {shock.n_quarters}Q + recovery")
 
-            # Comparison charts: baseline vs stressed
-            for var_key, var_label, color_base, color_stress in [
-                ("gdpGrowth", "GDP Growth (%)", CL["cy"], CL["rd"]),
-                ("unemployment", "Unemployment (%)", CL["am"], CL["rd"]),
-                ("inflation", "Inflation (%)", CL["pk"], CL["rd"]),
-                ("sp500Index", "S&P 500", CL["gn"], CL["rd"]),
-                ("goldPrice", "Gold ($/oz)", CL["am"], CL["rd"]),
-                ("bondYield10Y", "10Y Yield (%)", CL["bl"], CL["rd"]),
-                ("currencyIndex", "DXY", CL["cy"], CL["rd"]),
+            # Three-curve charts
+            for var_key, var_label, color_base in [
+                ("gdpGrowth", "GDP Growth (%)", CL["cy"]),
+                ("unemployment", "Unemployment (%)", CL["am"]),
+                ("inflation", "Inflation (%)", CL["pk"]),
+                ("sp500Index", "S&P 500", CL["gn"]),
+                ("goldPrice", "Gold ($/oz)", CL["am"]),
+                ("bondYield10Y", "10Y Yield (%)", CL["bl"]),
+                ("currencyIndex", "DXY", CL["cy"]),
             ]:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df["label"], y=df[var_key], mode="lines",
                     name="Baseline", line=dict(color=color_base, width=2)))
-                fig.add_trace(go.Scatter(x=stress_df["label"], y=stress_df[var_key], mode="lines",
-                    name="Stressed", line=dict(color=color_stress, width=2.5, dash="dot")))
-                # Shade the shock period
+                fig.add_trace(go.Scatter(x=stress_nopol_df["label"], y=stress_nopol_df[var_key],
+                    mode="lines", name="Stressed (No Response)",
+                    line=dict(color=CL["rd"], width=2, dash="dot")))
+                fig.add_trace(go.Scatter(x=stress_df["label"], y=stress_df[var_key],
+                    mode="lines", name="Stressed (With Policy)",
+                    line=dict(color=CL["am"], width=2.5)))
                 fig.add_vrect(x0=f"Q{onset_q}", x1=f"Q{min(onset_q + shock.n_quarters, 24)}",
                               fillcolor="rgba(255,82,82,0.08)", line_width=0)
                 fig.update_layout(**DARK_LAYOUT, height=280, title=var_label)
                 st.plotly_chart(fig, use_container_width=True)
 
-            # Fed response chart (Taylor Rule)
+            # Effective Fed Rate chart
             fig_fed = go.Figure()
             fig_fed.add_trace(go.Scatter(x=df["label"], y=df["effRate"], mode="lines",
-                name="Baseline Fed Rate", line=dict(color=CL["bl"], width=2)))
-            fig_fed.add_trace(go.Scatter(x=stress_df["label"], y=stress_df["effRate"], mode="lines",
-                name="Stressed Fed Rate (Taylor)", line=dict(color=CL["rd"], width=2.5, dash="dot")))
+                name="Baseline", line=dict(color=CL["bl"], width=2)))
+            fig_fed.add_trace(go.Scatter(x=stress_nopol_df["label"], y=stress_nopol_df["effRate"],
+                mode="lines", name="No Response (flat)",
+                line=dict(color=CL["rd"], width=2, dash="dot")))
+            fig_fed.add_trace(go.Scatter(x=stress_df["label"], y=stress_df["effRate"],
+                mode="lines", name=f"Taylor Response ({fed_aggr}x)",
+                line=dict(color=CL["am"], width=2.5)))
             fig_fed.add_vrect(x0=f"Q{onset_q}", x1=f"Q{min(onset_q + shock.n_quarters, 24)}",
                               fillcolor="rgba(255,82,82,0.08)", line_width=0)
             fig_fed.update_layout(**DARK_LAYOUT, height=280,
-                title="Effective Fed Rate (with Taylor Rule Response)")
+                title="Effective Fed Rate — Policy Response Timing")
             st.plotly_chart(fig_fed, use_container_width=True)
 
-            # Impact summary
-            st.markdown("##### Impact Summary (stressed vs baseline at trough)")
-            # Find worst quarter for GDP in stress
-            stress_gdp = [r.gdpGrowth for r in stress_results]
-            base_gdp = [r.gdpGrowth for r in results]
-            worst_q = int(np.argmin(stress_gdp))
+            # Impact summary at trough
+            st.markdown("##### Impact at Trough (worst GDP quarter)")
+            stress_nopol_gdp = [r.gdpGrowth for r in stress_nopol_results]
+            worst_q = int(np.argmin(stress_nopol_gdp))
 
-            impact_data = {
-                "Variable": ["GDP Growth", "Unemployment", "Inflation", "S&P 500", "Gold", "10Y Yield", "DXY"],
-                "Baseline": [
-                    f"{results[worst_q].gdpGrowth:.1f}%",
-                    f"{results[worst_q].unemployment:.1f}%",
-                    f"{results[worst_q].inflation:.1f}%",
-                    f"{results[worst_q].sp500Index:,.0f}",
-                    f"{results[worst_q].goldPrice:,.0f}",
-                    f"{results[worst_q].bondYield10Y:.2f}%",
-                    f"{results[worst_q].currencyIndex:.1f}",
-                ],
-                "Stressed": [
-                    f"{stress_results[worst_q].gdpGrowth:.1f}%",
-                    f"{stress_results[worst_q].unemployment:.1f}%",
-                    f"{stress_results[worst_q].inflation:.1f}%",
-                    f"{stress_results[worst_q].sp500Index:,.0f}",
-                    f"{stress_results[worst_q].goldPrice:,.0f}",
-                    f"{stress_results[worst_q].bondYield10Y:.2f}%",
-                    f"{stress_results[worst_q].currencyIndex:.1f}",
-                ],
-                "Impact": [
-                    f"{stress_results[worst_q].gdpGrowth - results[worst_q].gdpGrowth:+.1f}pp",
-                    f"{stress_results[worst_q].unemployment - results[worst_q].unemployment:+.1f}pp",
-                    f"{stress_results[worst_q].inflation - results[worst_q].inflation:+.1f}pp",
-                    f"{stress_results[worst_q].sp500Index - results[worst_q].sp500Index:+,.0f}",
-                    f"{stress_results[worst_q].goldPrice - results[worst_q].goldPrice:+,.0f}",
-                    f"{stress_results[worst_q].bondYield10Y - results[worst_q].bondYield10Y:+.2f}pp",
-                    f"{stress_results[worst_q].currencyIndex - results[worst_q].currencyIndex:+.1f}",
-                ],
-            }
-            st.dataframe(pd.DataFrame(impact_data), use_container_width=True, hide_index=True)
-            st.caption(f"Trough quarter: Q{worst_q + 1} | Regime: {stress_results[worst_q].regime} | FCI: {stress_results[worst_q].fci:.2f}")
+            def _v(r_list, q, k):
+                v = getattr(r_list[q], k)
+                if isinstance(v, float) and abs(v) >= 100:
+                    return f"{v:,.0f}"
+                elif isinstance(v, float):
+                    return f"{v:.1f}"
+                return str(v)
+
+            vars_to_show = [
+                ("GDP Growth", "gdpGrowth", "%"), ("Unemployment", "unemployment", "%"),
+                ("Inflation", "inflation", "%"), ("S&P 500", "sp500Index", ""),
+                ("Gold", "goldPrice", ""), ("10Y Yield", "bondYield10Y", "%"),
+                ("Fed Rate (eff)", "effRate", "%"),
+            ]
+            impact_rows = []
+            for label, key, unit in vars_to_show:
+                b = getattr(results[worst_q], key)
+                np_ = getattr(stress_nopol_results[worst_q], key)
+                wp = getattr(stress_results[worst_q], key)
+                fmt = lambda v: f"{v:,.0f}" if abs(v) >= 100 else f"{v:.2f}"
+                impact_rows.append({
+                    "Variable": label,
+                    "Baseline": f"{fmt(b)}{unit}",
+                    "No Response": f"{fmt(np_)}{unit}",
+                    "With Policy": f"{fmt(wp)}{unit}",
+                    "Policy Effect": f"{wp - np_:+.2f}" if abs(wp) < 100 else f"{wp - np_:+,.0f}",
+                })
+            st.dataframe(pd.DataFrame(impact_rows), use_container_width=True, hide_index=True)
+            st.caption(f"Trough: Q{worst_q + 1} | "
+                       f"No-response regime: {stress_nopol_results[worst_q].regime} (FCI {stress_nopol_results[worst_q].fci:.2f}) | "
+                       f"With-policy regime: {stress_results[worst_q].regime} (FCI {stress_results[worst_q].fci:.2f})")
 
     with tab_data:
         st.markdown("### 📋 Input Data Used for This Forecast")
