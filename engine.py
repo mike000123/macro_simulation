@@ -127,6 +127,8 @@ class SimResult:
     regime_o: float = 0
     fiscalMultiplier: float = 1.0
     nairuShift: float = 0
+    taylorAdj: float = 0         # Taylor Rule rate adjustment
+    effRate: float = 0           # Effective fed rate after Taylor
 
 
 def simulate(params: dict,
@@ -296,10 +298,24 @@ def simulate(params: dict,
             uI += abs(dL) * 1.5
         u = clamp((sU + ns) + uI + n * 0.25, 1.5, 18)
 
+        # ── Taylor Rule (endogenous Fed response) ──
+        # Taylor: r = r_neutral + 0.5*(inf - target) + 0.5*(gap)
+        # Applied as adjustment to effective rate used in downstream channels.
+        # Only activates when inputs are a series (stress/MC), not pure forward.
+        taylor_adj = 0.0
+        if bt:
+            r_neutral = ref_d["fedRate"]  # baseline rate as neutral
+            taylor_target = 0.5 * (inf - ANCHOR) + 0.5 * gap
+            # Gradual response: Fed adjusts 25% of Taylor prescription per quarter
+            taylor_adj = clamp(taylor_target * 0.25, -1.0, 1.0)
+        eff_rate = clamp(p["fedRate"] + taylor_adj, 0.0, 20.0)
+        # Recompute rate delta with Taylor adjustment for downstream use
+        dR_eff = eff_rate - ref_d["fedRate"]
+
         # ── Currency (with cyclical dynamics) ──
-        fxRS = K["fx_rb"] + K["fx_rl"] * abs(p["fedRate"])
+        fxRS = K["fx_rb"] + K["fx_rl"] * abs(eff_rate)
         # Core FX: rate differential + FCI + money + trade + oil
-        fx_core = sFX + fxRS * dR * lM * zlb - K["fx_f"] * fci \
+        fx_core = sFX + fxRS * dR_eff * lM * zlb - K["fx_f"] * fci \
                   - K["fx_m"] * dM * lM + K["fx_ca"] * (tb - sTB) * 0.01 \
                   - K["fx_to"] * dO
         # Add GDP-cycle feedback: strong growth attracts capital → stronger dollar
@@ -318,7 +334,7 @@ def simulate(params: dict,
         # Earnings-driven trend: GDP growth drives long-run equity appreciation
         # ~2% quarterly earnings growth at trend GDP (≈8% annualized nominal return)
         eq_trend = sp * (max(0, g + inf) / 100) * 0.25 if (not bt or not HSP) else 0  # quarterly nominal return
-        spC = ((g * K["eq_e"] + dP * K["eq_p"] * lS - K["eq_r"] * dR * lM
+        spC = ((g * K["eq_e"] + dP * K["eq_p"] * lS - K["eq_r"] * dR_eff * lM
                 + K["eq_m"] * dM * lM - K["eq_f"] * fci
                 - (K["eq_pm"] * abs(g - K["eq_pg"]) * fci
                    if g < K["eq_pg"] and fci > K["eq_pf"] else 0))
@@ -330,9 +346,9 @@ def simulate(params: dict,
 
         # ── Bonds (sqrt scaling) ──
         _, rp = debt_calc(dtg, by, g, dS * K["ds"] * 0.2 - dT * K["dtt"] * 0.5)
-        bfp = K["bf"] + K["bfl"] * np.sqrt(max(0, p["fedRate"]))
+        bfp = K["bf"] + K["bfl"] * np.sqrt(max(0, eff_rate))
         itp = K["bif"] * (inf - ANCHOR - 1) if inf > ANCHOR + 1 else 0
-        by = clamp(bfp * p["fedRate"] + K["bi"] * ie + K["bt"] + rp
+        by = clamp(bfp * eff_rate + K["bi"] * ie + K["bt"] + rp
                     + K["bv"] * abs(g - 2.5) * 0.2
                     + K["bs"] * max(0, dtg - 100) + itp + n * 0.08, 0.1, 16)
 
@@ -389,7 +405,7 @@ def simulate(params: dict,
         gold_safe_haven = 40.0 * max(0, fci)         # flight to safety
         gold_dollar = -6.0 * (fx - sFX)              # inverse dollar relationship
         gold_debt = 3.0 * max(0, dtg - 120)          # debasement fears
-        gold_trend = gold * 0.005 if not bt else 0   # ~2% annual trend (central bank buying)
+        gold_trend = gold * 0.005 if (not bt or not HSP) else 0   # ~2% annual trend
         gold = clamp(gold + gold_real_rate + gold_inflation + gold_safe_haven
                      + gold_dollar + gold_debt + gold_trend + n * 15, 800, 8000)
 
@@ -408,7 +424,8 @@ def simulate(params: dict,
             outputGap=round(gap, 2), wageGrowth=round(wg, 2),
             regime=rl, regime_r=round(rW, 2), regime_n=round(nW, 2),
             regime_o=round(oW, 2), fiscalMultiplier=round(fm, 2),
-            nairuShift=round(ns, 3),
+            nairuShift=round(ns, 3), taylorAdj=round(taylor_adj, 3),
+            effRate=round(eff_rate, 3),
         ))
 
     return results

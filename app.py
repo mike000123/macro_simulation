@@ -213,7 +213,10 @@ with st.sidebar:
               "fx": cur_act["currencyIndex"], "sp": cur_act["sp500Index"], "by": cur_act["bondYield10Y"],
               "tb": cur_act["tradeBalance"], "cc": cur_act["consumerConfidence"], "dtg": cur_inp["debtToGDP"],
               "gold": cur_act.get("goldPrice", 2900)}
-        results = simulate(p, initial_conditions=ic)
+        # Build baseline as input series (24 constant quarters) so it matches
+        # stress test and Monte Carlo code paths exactly — same lags, same noise, same equity trend.
+        baseline_series = [{**p, "q": f"Q{q+1}"} for q in range(24)]
+        results = simulate(baseline_series[0], baseline_series, ic)
 
         # ── Earnings Model ──
         st.divider()
@@ -296,7 +299,10 @@ with st.sidebar:
         p["oilPrice"] = st.slider("Oil ($/bbl)", 30.0, 180.0, fl(p["oilPrice"]), 1.0)
         p["productivityGrowth"] = st.slider("Productivity (%)", 0.0, 5.0, fl(p["productivityGrowth"]), 0.1)
         p["laborForceGrowth"] = st.slider("Labor Force (%)", -1.0, 3.0, fl(p["laborForceGrowth"]), 0.1)
-        results = simulate(p)
+        baseline_series = [{**p, "q": f"Q{q+1}"} for q in range(24)]
+        wi_ic = {"g": 2.5, "i": 3.2, "u": 4.0, "fx": 100, "sp": 5200, "by": 4.3,
+                 "tb": -780, "cc": 98, "dtg": p["debtToGDP"], "gold": 2900}
+        results = simulate(baseline_series[0], baseline_series, wi_ic)
 
         # ── Earnings Model ──
         st.divider()
@@ -461,6 +467,18 @@ if mode in ["🔮 Forecast from Now", "🎛️ What-If Scenarios"]:
                               fillcolor="rgba(255,82,82,0.08)", line_width=0)
                 fig.update_layout(**DARK_LAYOUT, height=280, title=var_label)
                 st.plotly_chart(fig, use_container_width=True)
+
+            # Fed response chart (Taylor Rule)
+            fig_fed = go.Figure()
+            fig_fed.add_trace(go.Scatter(x=df["label"], y=df["effRate"], mode="lines",
+                name="Baseline Fed Rate", line=dict(color=CL["bl"], width=2)))
+            fig_fed.add_trace(go.Scatter(x=stress_df["label"], y=stress_df["effRate"], mode="lines",
+                name="Stressed Fed Rate (Taylor)", line=dict(color=CL["rd"], width=2.5, dash="dot")))
+            fig_fed.add_vrect(x0=f"Q{onset_q}", x1=f"Q{min(onset_q + shock.n_quarters, 24)}",
+                              fillcolor="rgba(255,82,82,0.08)", line_width=0)
+            fig_fed.update_layout(**DARK_LAYOUT, height=280,
+                title="Effective Fed Rate (with Taylor Rule Response)")
+            st.plotly_chart(fig_fed, use_container_width=True)
 
             # Impact summary
             st.markdown("##### Impact Summary (stressed vs baseline at trough)")
