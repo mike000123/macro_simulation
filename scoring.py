@@ -103,7 +103,12 @@ def score(predictions: list, actuals: list) -> BacktestScore:
         # Era-adaptive scale
         actual_dicts = [a if isinstance(a, dict) else {} for a in actuals]
         scale = _adaptive_scale(actual_dicts, k, sv["base_scale"])
-        sc = max(0, min(100, 100 * (1 - mae / scale)))
+        mae_score = max(0, min(100, 100 * (1 - mae / scale)))
+        dir_score = directional * 100  # 0-100
+
+        # Blended score: 60% MAE accuracy + 40% directional accuracy
+        # This penalizes models that get the wrong direction even if amplitude is close
+        sc = 0.6 * mae_score + 0.4 * dir_score
 
         variables[k] = VarScore(
             label=sv["l"], mae=mae, rmse=rmse, bias=bias,

@@ -13,50 +13,50 @@ from typing import Optional, List, Dict
 
 K = {
     # GDP — optimized
-    "gdp_rate": 0.0667, "gdp_rate_high": 0.015, "gdp_rate_th": 5,
+    "gdp_rate": 0.116, "gdp_rate_high": 0.015, "gdp_rate_th": 5,
     "gdp_fs": 0.8, "gdp_ft": 0.235, "gdp_fc": 3.5,
-    "gdp_m": 0.041, "gdp_ta": 0.18, "gdp_o": 0.00466,
-    "gdp_fci_base": 0.1088, "gdp_fci_crisis": 0.285, "gdp_fci_th": 0.3,
+    "gdp_m": 0.041, "gdp_ta": 0.18, "gdp_o": 0.00593,
+    "gdp_fci_base": 0.215, "gdp_fci_crisis": 0.291, "gdp_fci_th": 0.3,
     "gdp_p": 0.6, "gdp_l": 0.4, "gdp_pb": 2.0,
     "gdp_ic": 0.3, "gdp_w": 0.000485, "gdp_g": 0.1,
     # Inflation — optimized
-    "inf_pl": 0.35, "inf_pc": 0.6, "inf_ps": 0.368,
+    "inf_pl": 0.35, "inf_pc": 0.6, "inf_ps": 0.168,
     "inf_ta": 0.139, "inf_o": 0.05, "inf_m": 0.03,
-    "inf_dc": 0.25, "inf_dl": 0.11,
-    "inf_ew": 0.137, "inf_an": 0.25, "inf_ah": 0.4,
+    "inf_dc": 0.25, "inf_dl": 0.0535,
+    "inf_ew": 0.259, "inf_an": 0.25, "inf_ah": 0.4,
     "inf_dt": 6, "inf_da": 0.1, "inf_fx": 0.016, "inf_wp": 0.15,
-    "inf_rate": 0.0565,
+    "inf_rate": 0.0932,
     # Unemployment — optimized
-    "uo_b": 0.174, "uo_c": 0.216, "uo_t": 0.4,
-    "uo_rate_th": 8, "uo_rate_amp": 0.01027,
-    "ul": 0.2, "ut": 0.08, "ul_crisis": 3.395,
+    "uo_b": 0.117, "uo_c": 0.270, "uo_t": 0.4,
+    "uo_rate_th": 8, "uo_rate_amp": 0.00813,
+    "ul": 0.2, "ut": 0.08, "ul_crisis": 1.472,
     "uh_t": 6, "uh_d": 4, "uh_r": 0.05,
     # Currency — optimized
-    "fx_rb": 0.663, "fx_rl": 0.1, "fx_f": 1.5, "fx_m": 0.217,
+    "fx_rb": 1.448, "fx_rl": 0.1, "fx_f": 1.5, "fx_m": 0.472,
     "fx_ct": 170, "fx_ca": 0.05, "fx_to": 0.01,
     # Equities — optimized
     "eq_e": 2.848, "eq_p": 30, "eq_r": 225.6, "eq_m": 40,
-    "eq_f": 470, "eq_pg": -1, "eq_pf": 0.3, "eq_pm": 328,
-    "eq_wf": 0.005, "eq_mo": 0.5, "eq_mr": 0.18,
+    "eq_f": 329, "eq_pg": -1, "eq_pf": 0.3, "eq_pm": 384,
+    "eq_wf": 0.005, "eq_mo": 0.5, "eq_mr": 0.154,
     # Bonds — optimized
-    "bf": 0.45, "bfl": 0.14, "bi": 0.35, "bt": 0.796,
-    "bv": 0.312, "bs": 0.00506, "bif": 0.267,
+    "bf": 0.45, "bfl": 0.14, "bi": 0.35, "bt": 0.764,
+    "bv": 0.340, "bs": 0.0176, "bif": 0.384,
     # Debt
     "ds": 1.5, "dtt": 0.3, "d1": 150, "d2": 180,
     "dq": 0.3, "drs": 0.5, "da": 0.4,
     # Trade
     "tf": 2, "tt": 8, "ts": 15, "tj": 4, "tr": 0.3,
     # FCI — optimized
-    "fe": 0.172, "fd_t": 135, "fd": 0.35,
-    "fg_t": 0.5, "fg": 0.726, "fa_t": 0.28, "fa": 1.6, "fc": 0.22,
-    "fy": 0.262, "fec": 0.434,
+    "fe": 0.0797, "fd_t": 135, "fd": 0.35,
+    "fg_t": 0.5, "fg": 0.394, "fa_t": 0.28, "fa": 1.6, "fc": 0.22,
+    "fy": 0.361, "fec": 0.673,
     # Consumer / Housing
     "ccl": 5, "cci": 3, "ccf": 8, "ccm": 0.2, "ccg": 3,
     "hr": 8, "hc": 1.3, "hd": 0.15,
     # Regime
     "rr": (1, -1), "ru": (4.5, 7), "ro": (3.5, 5.5), "rou": (4, 2.5),
     "rfr": 1.8, "rfn": 1.0, "rfo": 0.4, "ra": 1.6,
-    # Lags
+    # Lags (no longer used for main lags but kept for compatibility)
     "lm": 0.519, "lf": 0.435, "ls": 0.2, "lr": 0.031,
     # Shock
     "st": -2, "sa": 4, "sr": 0.5,
@@ -211,11 +211,17 @@ def simulate(params: dict,
 
     for q in range(N):
         p = get_input(q)
-        # Lag structure
-        lM = min(0.85, K["lm"] + q * K["lr"]) if bt else 1 - np.exp(-1.5 * q / N)
-        lF = min(0.9, K["lf"] + q * K["lr"]) if bt else 1 - np.exp(-2.5 * q / N)
-        lS = min(0.8, K["ls"] + q * K["lr"] * 0.75) if bt else 1 - np.exp(-q / N)
+        # Lag structure — starts high so policy changes hit GDP within 1-2 quarters
+        lM = min(0.92, 0.7 + q * 0.02) if bt else 1 - np.exp(-1.5 * q / N)
+        lF = min(0.95, 0.65 + q * 0.025) if bt else 1 - np.exp(-2.5 * q / N)
+        lS = min(0.85, 0.4 + q * 0.02) if bt else 1 - np.exp(-q / N)
         n = np.sin(q * 3.7) * 0.12 + np.cos(q * 5.3) * 0.08
+
+        # Use PREVIOUS quarter as reference for deltas (not always Q1)
+        # This captures the quarter-over-quarter change that drives GDP volatility
+        prev_d = get_input(max(0, q - 1)) if bt else ref_d
+        # Also keep absolute reference for level-based calculations
+        abs_ref = ref_d
 
         # Regime classification
         rW = smoothstep(K["rr"][0], K["rr"][1], g) * smoothstep(K["ru"][0], K["ru"][1], u)
@@ -227,13 +233,18 @@ def simulate(params: dict,
         zlb = 0.15 if p["fedRate"] <= 0.5 else (
             smoothstep(0.5, 2, p["fedRate"]) * 0.7 + 0.15 if p["fedRate"] <= 2 else 1.0)
 
-        # Deltas from reference
-        dR = p["fedRate"] - ref_d["fedRate"]
-        dS = p["govSpending"] - ref_d["govSpending"]
-        dT = p["taxRate"] - ref_d["taxRate"]
-        dM = p["moneySupplyGrowth"] - ref_d["moneySupplyGrowth"]
-        dTa = p["tariffRate"] - ref_d["tariffRate"]
-        dO = p["oilPrice"] - ref_d["oilPrice"]
+        # Deltas: quarter-over-quarter for GDP impulse (captures rate CHANGES)
+        dR_qoq = p["fedRate"] - prev_d["fedRate"]
+        dS_qoq = p["govSpending"] - prev_d["govSpending"]
+        dT_qoq = p["taxRate"] - prev_d["taxRate"]
+        dO_qoq = p["oilPrice"] - prev_d["oilPrice"]
+        # Absolute deltas from baseline for level-dependent calcs (FX, trade, etc.)
+        dR = p["fedRate"] - abs_ref["fedRate"]
+        dS = p["govSpending"] - abs_ref["govSpending"]
+        dT = p["taxRate"] - abs_ref["taxRate"]
+        dM = p["moneySupplyGrowth"] - abs_ref["moneySupplyGrowth"]
+        dTa = p["tariffRate"] - abs_ref["tariffRate"]
+        dO = p["oilPrice"] - abs_ref["oilPrice"]
         dL = p["laborForceGrowth"] - 0.5
         dP = p["productivityGrowth"] - 1.5
 
@@ -262,12 +273,19 @@ def simulate(params: dict,
 
         potG = K["gdp_pb"] + dP * K["gdp_p"] * lS + dL * K["gdp_l"] * lS - ns * 0.15
         pot *= (1 + potG / 400)
-        fi = logistic(dS * K["gdp_fs"] - dT * K["gdp_ft"], K["gdp_fc"], 1.2) * fm
+        fi = logistic(dS_qoq * K["gdp_fs"] - dT_qoq * K["gdp_ft"], K["gdp_fc"], 1.2) * fm
         effRateSens = K["gdp_rate"] + K["gdp_rate_high"] * max(0, p["fedRate"] - K["gdp_rate_th"])
         effFciDrag = K["gdp_fci_base"] + K["gdp_fci_crisis"] * max(0, fci - K["gdp_fci_th"])
-        rI = (fi - effRateSens * dR * zlb * mp * lM
+        
+        # GDP impulse: combine QoQ rate change (direction) + rate level effect (sustained drag)
+        rate_impulse = -effRateSens * dR_qoq * zlb * mp * lM  # rate CHANGE effect
+        rate_level = -0.08 * max(0, p["fedRate"] - 6) * lM     # sustained high-rate drag above 6%
+        oil_impulse = -K["gdp_o"] * dO_qoq * lM * 2            # oil QoQ changes hit hard
+        oil_level = -0.003 * max(0, p["oilPrice"] - 80) * lM   # sustained high oil drag
+        
+        rI = (fi + rate_impulse + rate_level + oil_impulse + oil_level
               - logistic(dTa * K["gdp_ta"], 2) * lF
-              - K["gdp_o"] * dO * lM - effFciDrag * fci * lM
+              - effFciDrag * fci * lM
               + K["gdp_m"] * dM * lM + K["gdp_w"] * (sp - pS)
               + K["gdp_ic"] * np.sin(q * np.pi / 3) * np.exp(-0.08 * q)
               - K["gdp_g"] * max(0, dTa) * lF + K["da"] * max(0, u - 5) * 0.1)
@@ -314,11 +332,14 @@ def simulate(params: dict,
         # Channel 1: Okun's law (output gap → unemployment)
         uI = -eOkun * gap
 
-        # Channel 2: Cumulative GDP weakness (sustained below-trend growth accumulates)
-        cum_weak = max(0, 1.5 - g) * 0.15  # moderate accumulation
+        # Channel 2: Direct GDP level tracking — when GDP < 1%, unemployment rises sharply
+        # This is the key fix: actual GDP swings drive unemployment, not just the dampened output gap
+        gdp_unemp = 0.4 * max(0, 1.0 - g)   # rises fast below 1% GDP
+        if g < 0:
+            gdp_unemp += 0.6 * abs(g)         # much sharper below zero (recession)
 
-        # Channel 3: Direct FCI stress (credit tightening → layoffs in finance, construction, retail)
-        fci_unemp = 0.5 * max(0, fci - 0.1) ** 1.3  # convex — gets much worse above FCI 0.5
+        # Channel 3: Direct FCI stress (credit tightening → layoffs)
+        fci_unemp = 0.4 * max(0, fci - 0.1) ** 1.3
 
         # Channel 4: Rate drag (high rates kill housing/auto/capex employment)
         rate_unemp = K["uo_rate_amp"] * max(0, p["fedRate"] - K["uo_rate_th"])
@@ -330,13 +351,10 @@ def simulate(params: dict,
         if sf > 1:
             labor_unemp += abs(dL) * 1.5
 
-        # Channel 6: Tariff drag
-        tariff_unemp = K["ut"] * dTa * lF
+        # Channel 6: Tariff + labor supply
+        other_unemp = K["ut"] * dTa * lF - K["ul"] * dL * lS
 
-        # Channel 7: Labor supply (normal range)
-        labor_supply = -K["ul"] * dL * lS
-
-        uI += cum_weak + fci_unemp + rate_unemp + labor_unemp + tariff_unemp + labor_supply
+        uI += gdp_unemp + fci_unemp + rate_unemp + labor_unemp + other_unemp
         u = clamp((sU + ns) + uI + n * 0.25, 1.5, 18)
 
         # ── Taylor Rule (endogenous Fed response) ──
@@ -363,14 +381,27 @@ def simulate(params: dict,
         prev_fx = fx
         fx = clamp(fx_core + fx_gdp + fx_ppp + fx_mom + n * 0.5, 55, 150)
 
-        # ── Equities ──
+        # ── Equities (forward-looking) ──
         ppS = pS
         pS = sp
         spT = HSP[q] if bt and HSP and q < len(HSP) else sp
-        # Earnings-driven trend: GDP growth drives long-run equity appreciation
-        # ~2% quarterly earnings growth at trend GDP (≈8% annualized nominal return)
-        eq_trend = sp * (max(0, g + inf) / 100) * 0.25 if (not bt or not HSP) else 0  # quarterly nominal return
-        spC = ((g * K["eq_e"] + dP * K["eq_p"] * lS - K["eq_r"] * dR_eff * lM
+        eq_trend = sp * (max(0, g + inf) / 100) * 0.25 if (not bt or not HSP) else 0
+
+        # Forward-looking rate effect: markets price in expected rate TRAJECTORY
+        # If rates are very high but falling, equities anticipate relief (Volcker 1982 rally)
+        # If rates are low but rising, equities anticipate tightening
+        rate_trajectory = dR_qoq  # positive = rates rising, negative = rates falling
+        if bt and q > 0:
+            # 2-quarter rate momentum: are rates accelerating or decelerating?
+            prev_prev_rate = get_input(max(0, q-2))["fedRate"]
+            rate_accel = dR_qoq - (prev_d["fedRate"] - prev_prev_rate)
+            # Markets rally on decelerating hikes (even before cuts)
+            rate_fwd = rate_trajectory + 0.5 * rate_accel
+        else:
+            rate_fwd = rate_trajectory
+
+        spC = ((g * K["eq_e"] + dP * K["eq_p"] * lS
+                - K["eq_r"] * rate_fwd * lM   # forward rate effect, not level
                 + K["eq_m"] * dM * lM - K["eq_f"] * fci
                 - (K["eq_pm"] * abs(g - K["eq_pg"]) * fci
                    if g < K["eq_pg"] and fci > K["eq_pf"] else 0))
@@ -443,7 +474,7 @@ def simulate(params: dict,
             fR += K["fec"]
         if fR > K["fa_t"]:
             fR = K["fa_t"] + (fR - K["fa_t"]) * K["fa"]
-        fci = clamp(fR, -1, 2.5)
+        fci = clamp(fR, -0.5, 2.5)
 
         # ── Consumer Confidence ──
         ccF = (sCC - K["ccl"] * (u - sU) + K["eq_wf"] * (sp - sSP)
