@@ -12,44 +12,44 @@ from typing import Optional, List, Dict
 # ╚═══════════════════════════════════════════════════════════════╝
 
 K = {
-    # GDP
-    "gdp_rate": 0.1, "gdp_rate_high": 0.015, "gdp_rate_th": 5,
+    # GDP — optimized
+    "gdp_rate": 0.0667, "gdp_rate_high": 0.015, "gdp_rate_th": 5,
     "gdp_fs": 0.8, "gdp_ft": 0.235, "gdp_fc": 3.5,
-    "gdp_m": 0.041, "gdp_ta": 0.18, "gdp_o": 0.007,
-    "gdp_fci_base": 0.2, "gdp_fci_crisis": 0.6, "gdp_fci_th": 0.3,
+    "gdp_m": 0.041, "gdp_ta": 0.18, "gdp_o": 0.00466,
+    "gdp_fci_base": 0.1088, "gdp_fci_crisis": 0.285, "gdp_fci_th": 0.3,
     "gdp_p": 0.6, "gdp_l": 0.4, "gdp_pb": 2.0,
     "gdp_ic": 0.3, "gdp_w": 0.000485, "gdp_g": 0.1,
-    # Inflation — added inf_rate for Volcker disinflation
-    "inf_pl": 0.35, "inf_pc": 0.6, "inf_ps": 0.28,
+    # Inflation — optimized
+    "inf_pl": 0.35, "inf_pc": 0.6, "inf_ps": 0.368,
     "inf_ta": 0.139, "inf_o": 0.05, "inf_m": 0.03,
-    "inf_dc": 0.25, "inf_dl": 0.12,
+    "inf_dc": 0.25, "inf_dl": 0.11,
     "inf_ew": 0.137, "inf_an": 0.25, "inf_ah": 0.4,
     "inf_dt": 6, "inf_da": 0.1, "inf_fx": 0.016, "inf_wp": 0.15,
-    "inf_rate": 0.04,                                               # NEW: direct rate → CPI (moderate)
-    # Unemployment
-    "uo_b": 0.2, "uo_c": 0.45, "uo_t": 0.4,
-    "uo_rate_th": 8, "uo_rate_amp": 0.015,
-    "ul": 0.2, "ut": 0.08, "ul_crisis": 1.8,
+    "inf_rate": 0.0565,
+    # Unemployment — optimized
+    "uo_b": 0.174, "uo_c": 0.216, "uo_t": 0.4,
+    "uo_rate_th": 8, "uo_rate_amp": 0.01027,
+    "ul": 0.2, "ut": 0.08, "ul_crisis": 3.395,
     "uh_t": 6, "uh_d": 4, "uh_r": 0.05,
-    # Currency
-    "fx_rb": 1.0, "fx_rl": 0.1, "fx_f": 1.5, "fx_m": 0.609,
+    # Currency — optimized
+    "fx_rb": 0.663, "fx_rl": 0.1, "fx_f": 1.5, "fx_m": 0.217,
     "fx_ct": 170, "fx_ca": 0.05, "fx_to": 0.01,
-    # Equities — stronger crash + mean-reversion
+    # Equities — optimized
     "eq_e": 2.848, "eq_p": 30, "eq_r": 225.6, "eq_m": 40,
-    "eq_f": 300, "eq_pg": -1, "eq_pf": 0.3, "eq_pm": 450,        # ↑ FCI crash
-    "eq_wf": 0.005, "eq_mo": 0.5, "eq_mr": 0.22,                  # ↑ mean-reversion
-    # Bonds — higher fed passthrough
-    "bf": 0.45, "bfl": 0.14, "bi": 0.35, "bt": 0.25,
-    "bv": 0.15, "bs": 0.02, "bif": 0.25,
+    "eq_f": 470, "eq_pg": -1, "eq_pf": 0.3, "eq_pm": 328,
+    "eq_wf": 0.005, "eq_mo": 0.5, "eq_mr": 0.18,
+    # Bonds — optimized
+    "bf": 0.45, "bfl": 0.14, "bi": 0.35, "bt": 0.796,
+    "bv": 0.312, "bs": 0.00506, "bif": 0.267,
     # Debt
     "ds": 1.5, "dtt": 0.3, "d1": 150, "d2": 180,
     "dq": 0.3, "drs": 0.5, "da": 0.4,
     # Trade
     "tf": 2, "tt": 8, "ts": 15, "tj": 4, "tr": 0.3,
-    # FCI — lower thresholds for earlier activation
-    "fe": 0.12, "fd_t": 135, "fd": 0.35,
-    "fg_t": 0.5, "fg": 0.55, "fa_t": 0.28, "fa": 1.6, "fc": 0.22,
-    "fy": 0.35, "fec": 0.45,
+    # FCI — optimized
+    "fe": 0.172, "fd_t": 135, "fd": 0.35,
+    "fg_t": 0.5, "fg": 0.726, "fa_t": 0.28, "fa": 1.6, "fc": 0.22,
+    "fy": 0.262, "fec": 0.434,
     # Consumer / Housing
     "ccl": 5, "cci": 3, "ccf": 8, "ccm": 0.2, "ccg": 3,
     "hr": 8, "hc": 1.3, "hd": 0.15,
