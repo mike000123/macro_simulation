@@ -792,18 +792,43 @@ go to 18% — it prices in normalization toward ~10%, producing ~13% (matching r
 - **Flight to quality**: During high FCI, 10Y drops (safe haven buying)
 - **Smoothing**: 60% previous / 40% target per quarter (yields don't jump)
 
-#### 3.10 Gold Channel
+#### 3.10 Gold Channel — Dual-Regime Model
+Gold has two distinct regimes: pre-2022 (cyclical — driven primarily by real rates)
+and post-2022 (structural — central bank buying and de-dollarization dominate).
+Our model captures both.
+
 ```
-Gold = previous + real_rate_effect + inflation_hedge + safe_haven
-       + dollar_inverse + debt_debasement + central_bank_trend
+Gold_change = cyclical_components + structural_components + momentum
 ```
-- **Real rates**: -25 × (10Y - inflExpectations - 1.0). Gold rises when real rates < 1%
-- **Inflation hedge**: +8 × max(0, expectations - 2.5%)
-- **Safe haven**: +40 × max(0, FCI). Convex crisis demand
-- **Dollar inverse**: -6 × (DXY change from baseline)
-- **Debt debasement**: +3 × max(0, debt/GDP - 120%)
-- **Central bank trend**: +0.5%/quarter (~2%/yr) in forward mode. Reflects structural
-  central bank gold accumulation (China, India, Russia diversifying reserves)
+
+**Cyclical channels** (traditional, weighted lower than pre-2022):
+- **Real rates**: -12 × (10Y - inflExpectations - 1.0). Reduced from -25 because gold's
+  real-rate correlation has weakened significantly (gold rose in 2022-2025 despite
+  positive real rates)
+- **Inflation hedge**: +6 × max(0, expectations - 2.5%)
+- **Safe haven**: +35 × max(0, FCI) — crisis demand
+- **Dollar inverse**: -5 × (DXY change from baseline)
+
+**Structural channels** (post-2022 regime — these drive the current bull market):
+- **Central bank buying**: +1.2%/quarter baseline. Reflects WGC data showing
+  CB gold purchases jumped from ~500t/year pre-2022 to ~1000t/year post-2022,
+  led by China, Russia, Turkey, India
+- **De-dollarization**: Activates when debt/GDP > 100%. Adds up to 0.4%/quarter
+  as reserve managers diversify away from dollar
+- **Geopolitical risk premium**: +0.5%/quarter persistent component.
+  Doesn't reset like FCI does — reflects ongoing Ukraine, Middle East, Taiwan risks
+- **Fiscal sustainability**: Activates when debt/GDP > 110% AND 10Y > 3.5%.
+  Compound interest costs → gold demand
+
+**Momentum**: +8% of previous quarter's change. Captures CTA/trend-follower activity
+that amplifies breakouts.
+
+**Why the model change was needed**: Gold went from $1,700 (2021) to $3,400 (2026)
+— doubling during a period when real rates rose from negative to positive 2%.
+The old model (which leaned heavily on real rates) would have predicted gold to
+fall in this environment. The new model attributes the rally correctly to structural
+factors: central bank accumulation, post-Russia-sanctions de-dollarization, and
+fiscal sustainability concerns.
 
 #### 3.11 Taylor Rule (Endogenous Fed Response)
 Active during stress tests. The Fed adjusts rates based on:

@@ -195,6 +195,7 @@ def simulate(params: dict,
     gold = ic.get("gold", 2900.0)   # $/oz
     prev_fx = sFX
     prev_tb = sTB
+    prev_gold = gold
 
     ref = input_series[0] if bt else params
 
@@ -487,18 +488,43 @@ def simulate(params: dict,
         hi = clamp(hi + ((15 * (5 - mr) if mr < 5 else -K["hr"] * (mr - 5) ** K["hc"])
                          + 2 * (cc - sCC) * K["hd"] + n * 2) * 0.15, 100, 600)
 
-        # ── Gold ──
-        # Gold responds to: real rates (inverse), inflation expectations, FCI (safe haven),
-        # dollar weakness, debt concerns, and has long-run inflation hedge trend
+        # ── Gold (multi-channel with structural demand) ──
+        # Gold responds to BOTH cyclical factors (real rates, FCI) AND
+        # structural factors (central bank buying, de-dollarization, fiscal concerns)
+        # that dominated post-2022.
         real_rate = by - ie  # 10Y yield minus inflation expectations
-        gold_real_rate = -25.0 * (real_rate - 1.0)  # gold rises when real rates fall below 1%
-        gold_inflation = 8.0 * max(0, ie - 2.5)     # inflation hedge above anchor
-        gold_safe_haven = 40.0 * max(0, fci)         # flight to safety
-        gold_dollar = -6.0 * (fx - sFX)              # inverse dollar relationship
-        gold_debt = 3.0 * max(0, dtg - 120)          # debasement fears
-        gold_trend = gold * 0.005 if (not bt or not HSP) else 0   # ~2% annual trend
+
+        # CYCLICAL channels (traditional)
+        # Real rate sensitivity reduced — gold's real-rate correlation has weakened
+        gold_real_rate = -12.0 * (real_rate - 1.0)  # was -25, now less sensitive
+        gold_inflation = 6.0 * max(0, ie - 2.5)     # hedge above anchor
+        gold_safe_haven = 35.0 * max(0, fci)         # flight to safety
+        gold_dollar = -5.0 * (fx - sFX)              # inverse dollar
+
+        # STRUCTURAL channels (post-2022 regime)
+        # Central bank buying: accelerated sharply after Russia sanctions (2022)
+        # WGC data: CB gold purchases averaged ~500t/yr pre-2022, ~1000t/yr post-2022
+        # Modeled as accelerating trend, scaling with current gold price
+        cb_base = 0.012  # ~5% annual baseline CB accumulation
+        # De-dollarization momentum: stronger when debt/GDP is high and dollar reserves being diversified
+        dedollar_boost = 0.004 * min(1.0, max(0, dtg - 100) / 30)  # activates above 100% debt/GDP
+        # Geopolitical risk premium: stays elevated even when FCI is normal
+        # Modeled as a persistent component that doesn't reset
+        geo_premium = 0.005  # ~2% annual geopolitical/structural premium
+        # Fiscal sustainability concern: US deficit-driven
+        # High debt + high rates = compounding interest costs = gold demand
+        fiscal_premium = 0.003 * max(0, dtg - 110) * max(0, by - 3.5) / 50
+
+        # Combined structural trend (percentage-based, compounds with gold price)
+        structural_pct = cb_base + dedollar_boost + geo_premium + fiscal_premium
+        gold_structural = gold * structural_pct if (not bt or not HSP) else gold * structural_pct * 0.5
+
+        # Momentum channel: once gold breaks trend, CTAs amplify the move
+        gold_momentum = 0.08 * (gold - prev_gold)
+        prev_gold = gold
+
         gold = clamp(gold + gold_real_rate + gold_inflation + gold_safe_haven
-                     + gold_dollar + gold_debt + gold_trend + n * 15, 800, 8000)
+                     + gold_dollar + gold_structural + gold_momentum + n * 15, 800, 8000)
 
         rl = "recession" if rW > 0.5 else ("overheating" if oW > 0.5 else "normal")
         label = p.get("q", f"Q{q + 1}") if isinstance(p, dict) else f"Q{q + 1}"
